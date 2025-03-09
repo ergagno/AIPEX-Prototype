@@ -544,5 +544,15 @@ st.dataframe(sorted_data[["Program NAME", "Priority Ranking ", "Required Work Co
     'props': [('background-color', '#2980b9'), ('color', 'white'), ('font-weight', 'bold')]
 }]))
 
+# --- Feedback form ---
+st.subheader("Provide Feedback")
+with st.form("feedback_form"):
+    feedback = st.text_area("Please share your feedback on the AIPEX dashboard:")
+    submit = st.form_submit_button("Submit Feedback")
+    if submit:
+        with open("feedback.txt", "a") as f:
+            f.write(f"{datetime.now()}: {feedback}\n")
+        st.success("Thank you for your feedback!")
+
 # --- Run Instructions ---
 # Save as app.py and run with: streamlit run app.py
