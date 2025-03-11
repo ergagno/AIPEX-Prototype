@@ -61,8 +61,20 @@ with st.spinner("Loading data..."):
     data = load_data()
 
 # Ensure numeric columns are properly formatted
-for col in ["StandardCost", "ProjectedCost", "Actual Cost", "Project Duration (days)", "Project Readiness Ranking"]:
-    data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+base_numeric_columns = ["StandardCost", "ProjectedCost", "Actual Cost", "Project Duration (days)", "Project Readiness Ranking"]
+for col in base_numeric_columns:
+    if col in data.columns:
+        data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+
+# Define expected monthly columns
+monthly_columns = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+# Check which monthly columns actually exist
+available_monthly_columns = [col for col in monthly_columns if col in data.columns]
+if not available_monthly_columns:
+    st.warning("No monthly columns (e.g., 'January', 'February', etc.) found in the dataset. Please verify column names in your Excel file.")
+else:
+    for col in available_monthly_columns:
+        data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
 
 # Title and Description
 st.title("AIPEX by Enabled Performance")
@@ -173,9 +185,9 @@ st.dataframe(filtered_data)
 # Key Metrics
 st.subheader("Key Metrics")
 total_projected_cost = filtered_data["ProjectedCost"].sum()  # Full dollar amount
-readiness_percentage = filtered_data["Project Readiness Ranking"].mean() if not filtered_data.empty else 0  # Updated to use Ranking
+readiness_percentage = filtered_data["Project Readiness Ranking"].mean() if not filtered_data.empty else 0
 st.metric(label="Total Projected Cost", value=f"${total_projected_cost:,.0f}")
-st.metric(label="Average Project Readiness", value=f"{readiness_percentage:.1f}")  # Updated to use Ranking
+st.metric(label="Average Project Readiness", value=f"{readiness_percentage:.1f}")
 
 # --- Charts Section ---
 st.subheader("Visualizations")
@@ -293,57 +305,68 @@ with col2:
     cost_chart.update_traces(textposition="auto")
     st.plotly_chart(cost_chart)
 
-# Bar chart 3: Spend Profile (Row 2, Col 1)
+# Bar chart 3: Spend Profile (Row 2, Col 1) - Updated to use monthly columns and multiple years
 with col3:
     st.subheader("Spend Profile")
-    selected_year = selected_years[0] if selected_years else year_options[0] if year_options else None
-    if selected_years and len(selected_years) > 1:
-        selected_year = st.sidebar.selectbox("Select Single Planned Year for Spend Profile", options=selected_years)
-    spend_data = filtered_data[filtered_data["Planned Year"] == selected_year].copy() if selected_year else filtered_data.iloc[:0].copy()
-    
+    if selected_years:
+        if len(selected_years) > 1:
+            # Allow selection of a single year for detailed view if multiple are selected
+            selected_year = st.sidebar.selectbox("Select Single Planned Year for Detailed View (optional)", options=selected_years + [None], index=len(selected_years))
+        else:
+            selected_year = selected_years[0]
+    else:
+        selected_year = year_options[0] if year_options else None
+
+    # Filter data based on all selected years or the single selected year
+    if selected_year:
+        spend_data = filtered_data[filtered_data["Planned Year"] == selected_year].copy()
+    else:
+        spend_data = filtered_data.copy()
+
+    # Define expected monthly columns
+    monthly_columns = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+    # Aggregate spend data for each year
     spend_profile_data = []
-    for index, row in spend_data.iterrows():
-        if row["Project Duration (days)"] > 0 and not pd.isna(row["Projected Project Start Date"]) and row["ProjectedCost"] > 0:
-            start_date = pd.to_datetime(row["Projected Project Start Date"])
-            duration = int(row["Project Duration (days)"])
-            projected_cost = row["ProjectedCost"]
-            
-            time_points = np.arange(0, duration + 1)
-            peak_day = duration * 0.75
-            sigma = duration / 6
-            distribution = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((time_points - peak_day) / sigma) ** 2)
-            distribution = distribution / distribution.sum()
-            spend_amount = projected_cost * distribution
-            
-            dates = [start_date + timedelta(days=int(t)) for t in time_points]
-            for date, amount in zip(dates, spend_amount):
-                spend_profile_data.append({
-                    "Date": date,
-                    "Spend Amount": amount,
-                    "Program": row["Program NAME"]
-                })
+    if not spend_data.empty and any(col in spend_data.columns for col in monthly_columns):
+        for year in selected_years if selected_years else [selected_year] if selected_year else []:
+            year_data = filtered_data[filtered_data["Planned Year"] == year].copy()
+            year_spend = {}
+            for month in monthly_columns:
+                if month in year_data.columns:
+                    year_spend[month] = year_data[month].sum()
+            for month, short_month in zip(monthly_columns, months):
+                spend_profile_data.append({'Year': year, 'Month': short_month, 'Spend Amount': year_spend.get(month, 0)})
     
-    spend_profile_df = pd.DataFrame(spend_profile_data)
-    daily_spend = spend_profile_df.groupby("Date")["Spend Amount"].sum().reset_index()
-    
-    spend_chart = px.line(daily_spend, 
-                          x="Date", 
-                          y="Spend Amount", 
-                          title="",
-                          labels={"Spend Amount": "Spend Amount ($)"})
-    spend_chart.update_traces(mode="lines+markers")
-    spend_chart.update_layout(
-        yaxis_title="Spend Amount ($)",
-        yaxis_title_font_color="#2c3e50",
-        xaxis_title="Date",
-        xaxis_title_font_color="#2c3e50",
-        yaxis_tickformat="$,.0f",
-        yaxis_range=[0, daily_spend["Spend Amount"].max() * 1.1],
-        height=400,
-        paper_bgcolor="rgba(255, 255, 255, 0.5)",
-        plot_bgcolor="rgba(255, 255, 255, 0.5)"
-    )
-    st.plotly_chart(spend_chart)
+        spend_profile_df = pd.DataFrame(spend_profile_data)
+
+        if spend_profile_df['Spend Amount'].sum() > 0:
+            spend_chart = px.line(spend_profile_df,
+                                x="Month",
+                                y="Spend Amount",
+                                color="Year",  # Differentiate lines by year
+                                title="",
+                                labels={"Spend Amount": "Spend Amount ($)", "Year": "Planned Year"})
+            spend_chart.update_traces(mode="lines+markers")
+            spend_chart.update_layout(
+                yaxis_title="Spend Amount ($)",
+                yaxis_title_font_color="#2c3e50",
+                xaxis_title="Month",
+                xaxis_title_font_color="#2c3e50",
+                xaxis={'tickmode': 'array', 'tickvals': months},  # Ensure all months are shown
+                yaxis_tickformat="$,.0f",
+                yaxis_range=[0, spend_profile_df["Spend Amount"].max() * 1.1 if spend_profile_df["Spend Amount"].max() > 0 else 1000],
+                height=400,
+                paper_bgcolor="rgba(255, 255, 255, 0.5)",
+                plot_bgcolor="rgba(255, 255, 255, 0.5)",
+                legend=dict(title="Years", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(spend_chart)
+        else:
+            st.warning(f"No spend data found in monthly columns for the selected year(s). Please ensure the columns contain non-zero values.")
+    else:
+        st.warning(f"No valid monthly spend data available for the selected year(s). Please check if all monthly columns exist and contain data.")
 
 # Bar chart 4: Driver Distribution by Rating (Row 2, Col 2)
 with col4:
@@ -452,7 +475,7 @@ def compute_risk_score(row, base_risk, driver_safety_high_weight, other_driver_h
     if row["Priority Ranking "] > priority_threshold:
         risk_score += priority_penalty
 
-    if row["Project Readiness Ranking"] < readiness_threshold:  # Updated to use Ranking
+    if row["Project Readiness Ranking"] < readiness_threshold:
         risk_score += readiness_penalty
 
     return min(risk_score, 100)
@@ -532,21 +555,22 @@ if st.session_state.show_budget_tool:
     )
     budget_data["Budget Probability"] = budget_data.apply(calculate_budget_probability, axis=1)
     
-    budget_ratio = annual_budget / total_projected_cost_year if total_projected_cost_year > 0 else 1.0
+    # Corrected budget factor logic
+    budget_factor = min(1, annual_budget / total_projected_cost_year) if total_projected_cost_year > 0 else 1
     base_overall_probability = budget_data["Budget Probability"].mean() if not budget_data.empty else 0
-    if total_projected_cost_year > annual_budget:
-        budget_factor = budget_ratio
-    else:
-        budget_factor = 1 + (1 - budget_ratio) * 0.1
-    
     overall_probability = base_overall_probability * budget_factor
     overall_probability = max(0, min(1, overall_probability))
     
     def propose_action(row):
+        cost_ratio = row["ProjectedCost"] / row["StandardCost"] if row["StandardCost"] > 0 else 1.0
         if row["Risk Score"] > 70 and row["Budget Probability"] < 0.5:
             return "Pause"
         elif row["Risk Score"] < 30 and row["Budget Probability"] > 0.8:
             return "Accelerate"
+        elif row["Risk Score"] > 50 and row["Budget Probability"] < 0.7:
+            return "Slow Down"
+        elif cost_ratio > 1.2 and row["Budget Probability"] < 0.6:
+            return "Defer to Future Years"
         else:
             return "Continue"
     
