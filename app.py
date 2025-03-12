@@ -5,6 +5,9 @@ import numpy as np
 from datetime import datetime, timedelta
 import time
 import base64
+import io
+import folium
+from streamlit_folium import folium_static
 
 # Custom CSS with background image
 def get_base64(bin_file):
@@ -80,6 +83,36 @@ else:
 st.title("AIPEX by Enabled Performance")
 st.write("A professional tool for managing and visualizing oil and gas project data.")
 
+# Initialize session state for feedback and risk parameters
+if 'feedback_list' not in st.session_state:
+    st.session_state.feedback_list = []
+
+# Initialize session state for risk parameters with default values
+if 'base_risk' not in st.session_state:
+    st.session_state.base_risk = 10
+if 'driver_safety_high_weight' not in st.session_state:
+    st.session_state.driver_safety_high_weight = 30
+if 'other_driver_high_weight' not in st.session_state:
+    st.session_state.other_driver_high_weight = 20
+if 'driver_medium_weight' not in st.session_state:
+    st.session_state.driver_medium_weight = 10
+if 'cost_overrun_penalty' not in st.session_state:
+    st.session_state.cost_overrun_penalty = 15
+if 'priority_threshold' not in st.session_state:
+    st.session_state.priority_threshold = 7
+if 'priority_penalty' not in st.session_state:
+    st.session_state.priority_penalty = 10
+if 'readiness_threshold' not in st.session_state:
+    st.session_state.readiness_threshold = 50
+if 'readiness_penalty' not in st.session_state:
+    st.session_state.readiness_penalty = 20
+if 'alert_threshold' not in st.session_state:
+    st.session_state.alert_threshold = 50
+
+# Initialize session state for popup visibility
+if 'show_risk_popup' not in st.session_state:
+    st.session_state.show_risk_popup = False
+
 # --- Filtering Section ---
 with st.sidebar.expander("Project Filters", expanded=True):
     # Filter 1: Planned Year
@@ -143,26 +176,6 @@ with st.sidebar.expander("Project Filters", expanded=True):
         selected_feature_types = []
         st.experimental_rerun()
 
-# --- Risk Analyzer Parameters Section ---
-with st.sidebar.expander("Risk Analyzer Parameters", expanded=True):
-    st.write("Adjust the weights and thresholds for risk scoring:")
-    
-    base_risk = st.number_input("Base Risk Score", min_value=0, max_value=100, value=10, step=1)
-    
-    driver_safety_high_weight = st.number_input("Driver Safety 'High' Weight", min_value=0, max_value=100, value=30, step=1)
-    other_driver_high_weight = st.number_input("Other Driver 'High' Weight", min_value=0, max_value=100, value=20, step=1)
-    driver_medium_weight = st.number_input("Driver 'Medium' Weight", min_value=0, max_value=100, value=10, step=1)
-    
-    cost_overrun_penalty = st.number_input("Cost Overrun Penalty (>10%)", min_value=0, max_value=100, value=15, step=1)
-    
-    priority_threshold = st.number_input("Priority Ranking Threshold", min_value=1, max_value=10, value=7, step=1)
-    priority_penalty = st.number_input("Priority Ranking Penalty", min_value=0, max_value=100, value=10, step=1)
-    
-    readiness_threshold = st.number_input("Project Readiness Threshold (%)", min_value=0, max_value=100, value=50, step=1)
-    readiness_penalty = st.number_input("Project Readiness Penalty", min_value=0, max_value=100, value=20, step=1)
-    
-    alert_threshold = st.number_input("Alert Risk Threshold", min_value=0, max_value=100, value=50, step=1)
-
 # Apply filters
 filtered_data = data.copy()
 if selected_years:
@@ -192,15 +205,15 @@ st.metric(label="Average Project Readiness", value=f"{readiness_percentage:.1f}"
 # --- Charts Section ---
 st.subheader("Visualizations")
 
-# Create 3x2 grid using columns
+# Create 3x2 grid using columns with adjusted widths
 # Row 1
-col1, col2 = st.columns(2)
+col1, col2 = st.columns([1, 1])
 # Row 2
-col3, col4 = st.columns(2)
+col3, col4 = st.columns([1, 1])
 # Row 3
-col5, col6 = st.columns(2)
+col5, col6 = st.columns([1, 1])
 
-# Bar chart 1: Count by Scope (Row 1, Col 1)
+# Bar chart 1: Program Count by Scope (Row 1, Col 1)
 with col1:
     if len(selected_programs) == 1:
         st.subheader("Feature Type Count by Scope")
@@ -216,28 +229,58 @@ with col1:
             xaxis_title="Feature Type",
             xaxis_title_font_color="#2c3e50",
             height=400,
+            width=600,
             paper_bgcolor="rgba(255, 255, 255, 0.5)",
-            plot_bgcolor="rgba(255, 255, 255, 0.5)"
+            plot_bgcolor="rgba(255, 255, 255, 0.5)",
+            legend_title="Fully Scoped"
         )
     else:
         st.subheader("Program Count by Scope")
-        priority_chart = px.histogram(filtered_data, 
-                                      x="Program NAME", 
-                                      color="Fully Scoped", 
-                                      title="",
-                                      barmode="group")
-        priority_chart.update_layout(
-            yaxis_title="Count", 
-            yaxis_title_font_color="#2c3e50",
-            xaxis_title="Program Name",
-            xaxis_title_font_color="#2c3e50",
-            height=400,
-            paper_bgcolor="rgba(255, 255, 255, 0.5)",
-            plot_bgcolor="rgba(255, 255, 255, 0.5)"
-        )
+        if len(selected_years) > 1:
+            # Group by Program NAME, Fully Scoped, and Planned Year for multiple years
+            chart_data = filtered_data.groupby(['Program NAME', 'Fully Scoped', 'Planned Year']).size().reset_index(name='Count')
+            priority_chart = px.bar(chart_data, 
+                                    x="Program NAME", 
+                                    y="Count", 
+                                    color="Fully Scoped", 
+                                    facet_col="Planned Year", 
+                                    title="",
+                                    barmode="group",
+                                    category_orders={"Planned Year": sorted(selected_years)})
+            priority_chart.update_layout(
+                yaxis_title="Count", 
+                yaxis_title_font_color="#2c3e50",
+                xaxis_title="Program Name",
+                xaxis_title_font_color="#2c3e50",
+                height=400,
+                width=600,
+                paper_bgcolor="rgba(255, 255, 255, 0.5)",
+                plot_bgcolor="rgba(255, 255, 255, 0.5)",
+                legend_title="Fully Scoped"
+            )
+            priority_chart.for_each_annotation(lambda a: a.update(text=a.text.split("=")[1]))
+        else:
+            # Single year view
+            priority_chart = px.histogram(filtered_data, 
+                                          x="Program NAME", 
+                                          color="Fully Scoped", 
+                                          title="",
+                                          barmode="group")
+            priority_chart.update_layout(
+                yaxis_title="Count", 
+                yaxis_title_font_color="#2c3e50",
+                xaxis_title="Program Name",
+                xaxis_title_font_color="#2c3e50",
+                height=400,
+                width=600,
+                paper_bgcolor="rgba(255, 255, 255, 0.5)",
+                plot_bgcolor="rgba(255, 255, 255, 0.5)",
+                legend_title="Fully Scoped"
+            )
+    priority_chart.update_traces(textposition="auto")
     st.plotly_chart(priority_chart)
 
-# Bar chart 2: Total Cost (Row 1, Col 2)
+# Bar chart 2: Total Cost by Program (Row 1, Col 2)
 with col2:
     if len(selected_programs) == 1:
         st.subheader("Total Cost by Feature Type")
@@ -267,41 +310,80 @@ with col2:
             yaxis_tickformat="$,.0f",
             yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
             height=400,
+            width=600,
             showlegend=True,
             paper_bgcolor="rgba(255, 255, 255, 0.5)",
             plot_bgcolor="rgba(255, 255, 255, 0.5)"
         )
     else:
         st.subheader("Total Cost by Program")
-        for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
-            filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
-        cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
-            id_vars=["Program NAME"], 
-            value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
-            var_name="Cost Type", 
-            value_name="Total Cost"
-        )
-        cost_data = cost_data.groupby(["Program NAME", "Cost Type"])["Total Cost"].sum().reset_index()
-        cost_data = cost_data[cost_data["Total Cost"] > 0]
-        cost_chart = px.bar(cost_data, 
-                            x="Program NAME", 
-                            y="Total Cost", 
-                            color="Cost Type", 
-                            title="",
-                            barmode="group", 
-                            text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'))
-        cost_chart.update_layout(
-            yaxis_title="Total Cost ($)",
-            yaxis_title_font_color="#2c3e50",
-            xaxis_title="Program Name",
-            xaxis_title_font_color="#2c3e50",
-            yaxis_tickformat="$,.0f",
-            yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
-            height=400,
-            showlegend=True,
-            paper_bgcolor="rgba(255, 255, 255, 0.5)",
-            plot_bgcolor="rgba(255, 255, 255, 0.5)"
-        )
+        if len(selected_years) > 1:
+            # Group by Program NAME, Cost Type, and Planned Year for multiple years
+            for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
+                filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
+            cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year"]].melt(
+                id_vars=["Program NAME", "Planned Year"], 
+                value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+                var_name="Cost Type", 
+                value_name="Total Cost"
+            )
+            cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year"])["Total Cost"].sum().reset_index()
+            cost_data = cost_data[cost_data["Total Cost"] > 0]
+            cost_chart = px.bar(cost_data, 
+                                x="Program NAME", 
+                                y="Total Cost", 
+                                color="Cost Type", 
+                                facet_col="Planned Year", 
+                                title="",
+                                barmode="group",
+                                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'),
+                                category_orders={"Planned Year": sorted(selected_years)})
+            cost_chart.update_layout(
+                yaxis_title="Total Cost ($)",
+                yaxis_title_font_color="#2c3e50",
+                xaxis_title="Program Name",
+                xaxis_title_font_color="#2c3e50",
+                yaxis_tickformat="$,.0f",
+                yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
+                height=400,
+                width=600,
+                showlegend=True,
+                paper_bgcolor="rgba(255, 255, 255, 0.5)",
+                plot_bgcolor="rgba(255, 255, 255, 0.5)"
+            )
+            cost_chart.for_each_annotation(lambda a: a.update(text=a.text.split("=")[1]))
+        else:
+            # Single year view
+            for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
+                filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
+            cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
+                id_vars=["Program NAME"], 
+                value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+                var_name="Cost Type", 
+                value_name="Total Cost"
+            )
+            cost_data = cost_data.groupby(["Program NAME", "Cost Type"])["Total Cost"].sum().reset_index()
+            cost_data = cost_data[cost_data["Total Cost"] > 0]
+            cost_chart = px.bar(cost_data, 
+                                x="Program NAME", 
+                                y="Total Cost", 
+                                color="Cost Type", 
+                                title="",
+                                barmode="group", 
+                                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'))
+            cost_chart.update_layout(
+                yaxis_title="Total Cost ($)",
+                yaxis_title_font_color="#2c3e50",
+                xaxis_title="Program Name",
+                xaxis_title_font_color="#2c3e50",
+                yaxis_tickformat="$,.0f",
+                yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
+                height=400,
+                width=600,
+                showlegend=True,
+                paper_bgcolor="rgba(255, 255, 255, 0.5)",
+                plot_bgcolor="rgba(255, 255, 255, 0.5)"
+            )
     cost_chart.update_traces(textposition="auto")
     st.plotly_chart(cost_chart)
 
@@ -358,6 +440,7 @@ with col3:
                 yaxis_tickformat="$,.0f",
                 yaxis_range=[0, spend_profile_df["Spend Amount"].max() * 1.1 if spend_profile_df["Spend Amount"].max() > 0 else 1000],
                 height=400,
+                width=600,
                 paper_bgcolor="rgba(255, 255, 255, 0.5)",
                 plot_bgcolor="rgba(255, 255, 255, 0.5)",
                 legend=dict(title="Years", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
@@ -390,6 +473,7 @@ with col4:
         xaxis_title="Driver Type",
         xaxis_title_font_color="#2c3e50",
         height=400,
+        width=600,
         showlegend=True,
         paper_bgcolor="rgba(255, 255, 255, 0.5)",
         plot_bgcolor="rgba(255, 255, 255, 0.5)"
@@ -420,6 +504,7 @@ with col5:
             xaxis_title="Project Readiness Ranking",
             xaxis_title_font_color="#2c3e50",
             height=400,
+            width=600,
             paper_bgcolor="rgba(255, 255, 255, 0.5)",
             plot_bgcolor="rgba(255, 255, 255, 0.5)"
         )
@@ -444,6 +529,7 @@ with col6:
         xaxis_title="Priority Ranking",
         xaxis_title_font_color="#2c3e50",
         height=400,
+        width=600,
         showlegend=False,
         paper_bgcolor="rgba(255, 255, 255, 0.5)",
         plot_bgcolor="rgba(255, 255, 255, 0.5)"
@@ -453,6 +539,73 @@ with col6:
 
 # --- Project Completion Risk Assessment Section ---
 st.subheader("Project Completion Risk Assessment (Powered by AI)")
+
+# Button to trigger the popup (moved to this section)
+if st.button("Configure Risk Parameters"):
+    st.session_state.show_risk_popup = True
+
+# Display the popup if triggered
+if st.session_state.show_risk_popup:
+    with st.form("risk_parameters_form"):
+        st.subheader("Risk Analyzer Parameters")
+        
+        # Category: Base Risk
+        st.subheader("Base Risk")
+        base_risk = st.number_input("Base Risk Score", min_value=0, max_value=100, value=st.session_state.base_risk, step=1)
+        
+        # Category: Driver Weights
+        st.subheader("Driver Weights")
+        driver_safety_high_weight = st.number_input("Driver Safety 'High' Weight", min_value=0, max_value=100, value=st.session_state.driver_safety_high_weight, step=1)
+        other_driver_high_weight = st.number_input("Other Driver 'High' Weight", min_value=0, max_value=100, value=st.session_state.other_driver_high_weight, step=1)
+        driver_medium_weight = st.number_input("Driver 'Medium' Weight", min_value=0, max_value=100, value=st.session_state.driver_medium_weight, step=1)
+        
+        # Category: Cost and Priority Penalties
+        st.subheader("Cost and Priority Penalties")
+        cost_overrun_penalty = st.number_input("Cost Overrun Penalty (>10%)", min_value=0, max_value=100, value=st.session_state.cost_overrun_penalty, step=1)
+        priority_threshold = st.number_input("Priority Ranking Threshold", min_value=1, max_value=10, value=st.session_state.priority_threshold, step=1)
+        priority_penalty = st.number_input("Priority Ranking Penalty", min_value=0, max_value=100, value=st.session_state.priority_penalty, step=1)
+        
+        # Category: Readiness Penalties
+        st.subheader("Readiness Penalties")
+        readiness_threshold = st.number_input("Project Readiness Threshold (%)", min_value=0, max_value=100, value=st.session_state.readiness_threshold, step=1)
+        readiness_penalty = st.number_input("Project Readiness Penalty", min_value=0, max_value=100, value=st.session_state.readiness_penalty, step=1)
+        
+        # Category: Alert Threshold
+        st.subheader("Alert Threshold")
+        alert_threshold = st.number_input("Alert Risk Threshold", min_value=0, max_value=100, value=st.session_state.alert_threshold, step=1)
+
+        # Submit and Close buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.form_submit_button("Save Parameters"):
+                # Update session state with new values
+                st.session_state.base_risk = base_risk
+                st.session_state.driver_safety_high_weight = driver_safety_high_weight
+                st.session_state.other_driver_high_weight = other_driver_high_weight
+                st.session_state.driver_medium_weight = driver_medium_weight
+                st.session_state.cost_overrun_penalty = cost_overrun_penalty
+                st.session_state.priority_threshold = priority_threshold
+                st.session_state.priority_penalty = priority_penalty
+                st.session_state.readiness_threshold = readiness_threshold
+                st.session_state.readiness_penalty = readiness_penalty
+                st.session_state.alert_threshold = alert_threshold
+                st.session_state.show_risk_popup = False
+                st.success("Parameters saved successfully!")
+        with col2:
+            if st.form_submit_button("Close"):
+                st.session_state.show_risk_popup = False
+
+# Retrieve parameters from session state for use in calculations
+base_risk = st.session_state.base_risk
+driver_safety_high_weight = st.session_state.driver_safety_high_weight
+other_driver_high_weight = st.session_state.other_driver_high_weight
+driver_medium_weight = st.session_state.driver_medium_weight
+cost_overrun_penalty = st.session_state.cost_overrun_penalty
+priority_threshold = st.session_state.priority_threshold
+priority_penalty = st.session_state.priority_penalty
+readiness_threshold = st.session_state.readiness_threshold
+readiness_penalty = st.session_state.readiness_penalty
+alert_threshold = st.session_state.alert_threshold
 
 # Compute risk scores for each program
 def compute_risk_score(row, base_risk, driver_safety_high_weight, other_driver_high_weight, driver_medium_weight,
@@ -513,6 +666,7 @@ risk_chart.update_layout(
     xaxis_title_font_color="#2c3e50",
     yaxis_range=[0, 100],
     height=400,
+    width=600,
     showlegend=False,
     paper_bgcolor="rgba(255, 255, 255, 0.5)",
     plot_bgcolor="rgba(255, 255, 255, 0.5)"
@@ -520,15 +674,8 @@ risk_chart.update_layout(
 risk_chart.update_traces(textposition="auto")
 st.plotly_chart(risk_chart)
 
-# --- Budget Certainty Tool Button ---
-if "show_budget_tool" not in st.session_state:
-    st.session_state.show_budget_tool = False
-
-if st.button("Assess Budget Certainty"):
-    st.session_state.show_budget_tool = not st.session_state.show_budget_tool
-
 # --- Budget Certainty Tool Section ---
-if st.session_state.show_budget_tool:
+if year_options:  # Show the section if there are years in the data
     st.subheader("Budget Certainty Assessment Tool")
     
     analysis_year = st.selectbox("Select Year for Budget Analysis", options=year_options, index=0 if year_options else None)
@@ -623,15 +770,86 @@ st.dataframe(sorted_data[["Program NAME", "Priority Ranking ", "Required Work Co
     'props': [('background-color', '#2980b9'), ('color', 'white'), ('font-weight', 'bold')]
 }]))
 
-# --- Feedback form ---
+# --- Project Locations Map ---
+st.subheader("Project Locations Map")
+# Count projects per location
+location_counts = filtered_data["Location"].value_counts().reset_index()
+location_counts.columns = ["Location", "Project_Count"]
+
+# Predefined coordinates for Canadian cities (approximate)
+canada_cities = {
+    "Toronto": [43.651070, -79.347015],
+    "Vancouver": [49.282729, -123.120738],
+    "Montreal": [45.501689, -73.567256],
+    "Quebec City": [46.813878, -71.207981],
+    "Calgary": [51.044733, -114.071883],
+    "Ottawa": [45.421106, -75.690306],
+    "Edmonton": [53.546125, -113.493823],
+    "Winnipeg": [49.895136, -97.138374],
+    "Halifax": [44.648618, -63.585948],
+    # Add more cities as needed based on your data
+}
+
+# Create a map centered on Canada
+map_center = [60.000000, -95.000000]  # Approximate center of Canada
+m = folium.Map(location=map_center, zoom_start=4)
+
+# Add markers for each location with project count
+for index, row in location_counts.iterrows():
+    location = row["Location"]
+    count = row["Project_Count"]
+    if location in canada_cities:
+        lat, lon = canada_cities[location]
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=count / 10,  # Adjust radius based on count (scale factor)
+            popup=f"{location}: {count} projects",
+            fill=True,
+            color="blue",
+            fill_color="blue",
+            fill_opacity=0.6
+        ).add_to(m)
+
+# Display the map in Streamlit
+folium_static(m)
+
+# --- Feedback Section ---
 st.subheader("Provide Feedback")
 with st.form("feedback_form"):
     feedback = st.text_area("Please share your feedback on the AIPEX dashboard:")
     submit = st.form_submit_button("Submit Feedback")
     if submit:
-        with open("feedback.txt", "a") as f:
-            f.write(f"{datetime.now()}: {feedback}\n")
+        feedback_entry = f"{datetime.now()}: {feedback}"
+        st.session_state.feedback_list.append(feedback_entry)
         st.success("Thank you for your feedback!")
+
+# --- View Feedback Section ---
+if st.sidebar.checkbox("View Feedback (Admin Only)", value=False):
+    st.sidebar.subheader("Admin Authentication")
+    admin_password = st.sidebar.text_input("Enter Admin Password", type="password")
+    correct_password = "admin123"  # Hardcoded for simplicity; use env variables in production
+    if admin_password == correct_password:
+        st.subheader("Feedback History")
+        if st.session_state.feedback_list:
+            # Display feedback entries
+            for entry in st.session_state.feedback_list:
+                st.write(entry)
+            # Prepare feedback for download
+            feedback_df = pd.DataFrame(st.session_state.feedback_list, columns=["Feedback"])
+            feedback_df[['Timestamp', 'Comment']] = feedback_df['Feedback'].str.split(": ", n=1, expand=True)
+            feedback_df = feedback_df.drop(columns=['Feedback'])
+            feedback_csv = feedback_df.to_csv(index=False)
+            st.download_button(
+                label="Download Feedback as CSV",
+                data=feedback_csv,
+                file_name="feedback_export.csv",
+                mime="text/csv",
+            )
+        else:
+            st.write("No feedback submitted yet.")
+    else:
+        st.sidebar.warning("Incorrect password. Please enter the correct admin password to view feedback.")
 
 # --- Run Instructions ---
 # Save as app.py and run with: streamlit run app.py
+# Ensure requirements.txt includes: streamlit, pandas, plotly, numpy, openpyxl, folium
