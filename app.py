@@ -83,35 +83,49 @@ else:
 st.title("AIPEX by Enabled Performance")
 st.write("A professional tool for managing and visualizing oil and gas project data.")
 
-# Initialize session state for feedback and risk parameters
+# Initialize session state for feedback and assessment parameters
 if 'feedback_list' not in st.session_state:
     st.session_state.feedback_list = []
 
-# Initialize session state for risk parameters with default values
-if 'base_risk' not in st.session_state:
-    st.session_state.base_risk = 10
-if 'driver_safety_high_weight' not in st.session_state:
-    st.session_state.driver_safety_high_weight = 30
-if 'other_driver_high_weight' not in st.session_state:
-    st.session_state.other_driver_high_weight = 20
-if 'driver_medium_weight' not in st.session_state:
-    st.session_state.driver_medium_weight = 10
-if 'cost_overrun_penalty' not in st.session_state:
-    st.session_state.cost_overrun_penalty = 15
+# Initialize session state for assessment parameters with default values
+if 'base_assessment' not in st.session_state:
+    st.session_state.base_assessment = 90  # Start high, as higher is better
+if 'driver_safety_high_deduction' not in st.session_state:
+    st.session_state.driver_safety_high_deduction = 30  # Deduction for high safety concerns
+if 'other_driver_high_deduction' not in st.session_state:
+    st.session_state.other_driver_high_deduction = 20  # Deduction for other high concerns
+if 'driver_medium_deduction' not in st.session_state:
+    st.session_state.driver_medium_deduction = 10  # Deduction for medium concerns
+if 'cost_overrun_deduction' not in st.session_state:
+    st.session_state.cost_overrun_deduction = 15  # Deduction for cost overrun
 if 'priority_threshold' not in st.session_state:
-    st.session_state.priority_threshold = 7
-if 'priority_penalty' not in st.session_state:
-    st.session_state.priority_penalty = 10
+    st.session_state.priority_threshold = 7  # Same threshold
+if 'priority_deduction' not in st.session_state:
+    st.session_state.priority_deduction = 10  # Deduction for high priority
 if 'readiness_threshold' not in st.session_state:
-    st.session_state.readiness_threshold = 50
-if 'readiness_penalty' not in st.session_state:
-    st.session_state.readiness_penalty = 20
+    st.session_state.readiness_threshold = 50  # Same threshold
+if 'readiness_bonus' not in st.session_state:
+    st.session_state.readiness_bonus = 20  # Bonus for high readiness
 if 'alert_threshold' not in st.session_state:
-    st.session_state.alert_threshold = 50
+    st.session_state.alert_threshold = 50  # Threshold for low scores (now low is bad)
+
+# Initialize session state for probability parameters
+if 'base_probability' not in st.session_state:
+    st.session_state.base_probability = 0.9  # Starting probability (90%)
+if 'cost_overrun_sensitivity' not in st.session_state:
+    st.session_state.cost_overrun_sensitivity = 1.0  # Multiplier for cost overrun impact
+if 'budget_surplus_boost' not in st.session_state:
+    st.session_state.budget_surplus_boost = 1.0  # Multiplier for surplus effect
+if 'min_probability_cap' not in st.session_state:
+    st.session_state.min_probability_cap = 0.1  # Minimum probability cap (10%)
+if 'assessment_score_weight' not in st.session_state:
+    st.session_state.assessment_score_weight = 1.0  # Weight for assessment score impact
 
 # Initialize session state for popup visibility
-if 'show_risk_popup' not in st.session_state:
-    st.session_state.show_risk_popup = False
+if 'show_assessment_popup' not in st.session_state:
+    st.session_state.show_assessment_popup = False
+if 'show_probability_popup' not in st.session_state:
+    st.session_state.show_probability_popup = False
 
 # --- Filtering Section ---
 with st.sidebar.expander("Project Filters", expanded=True):
@@ -215,6 +229,12 @@ col5, col6 = st.columns([1, 1])
 
 # Bar chart 1: Program Count by Scope (Row 1, Col 1)
 with col1:
+    # Calculate % Portfolio Fully Scoped
+    total_projects = len(filtered_data)
+    fully_scoped_projects = len(filtered_data[filtered_data["Fully Scoped"] == "Yes"])
+    percent_fully_scoped = (fully_scoped_projects / total_projects * 100) if total_projects > 0 else 0
+    st.metric(label="% Portfolio Fully Scoped", value=f"{percent_fully_scoped:.1f}%")
+
     if len(selected_programs) == 1:
         st.subheader("Feature Type Count by Scope")
         chart_data = filtered_data[filtered_data["Program NAME"] == selected_programs[0]]
@@ -282,6 +302,17 @@ with col1:
 
 # Bar chart 2: Total Cost by Program (Row 1, Col 2)
 with col2:
+    # Display total portfolio costs in a table
+    total_projected_cost = filtered_data["ProjectedCost"].sum()
+    total_standard_cost = filtered_data["StandardCost"].sum()
+    total_actual_cost = filtered_data["Actual Cost"].sum()
+    st.write("### Total Portfolio Costs")
+    cost_table_data = pd.DataFrame({
+        "Cost Type": ["Total Projected Cost", "Total Standard Cost", "Total Actual Cost"],
+        "Amount": [f"${total_projected_cost:,.0f}", f"${total_standard_cost:,.0f}", f"${total_actual_cost:,.0f}"]
+    })
+    st.table(cost_table_data)
+
     if len(selected_programs) == 1:
         st.subheader("Total Cost by Feature Type")
         chart_data = filtered_data[filtered_data["Program NAME"] == selected_programs[0]]
@@ -454,8 +485,12 @@ with col3:
 # Bar chart 4: Driver Distribution by Rating (Row 2, Col 2)
 with col4:
     st.subheader("Driver Distribution by Rating")
-    driver_columns = ["Driver Safety", "Driver Operational", "Driver Environment", "Driver Regulatory", "Driver Compliance"]
+    # Filter to only the desired drivers
+    driver_columns = ["Driver Safety", "Driver Operational", "Driver Regulatory"]
     driver_data = filtered_data[driver_columns].melt(var_name="Driver Type", value_name="Rating")
+    
+    # Rename "Driver Operational" to "Reliability"
+    driver_data["Driver Type"] = driver_data["Driver Type"].replace("Driver Operational", "Driver Reliability")
     
     driver_data = driver_data.groupby(["Driver Type", "Rating"]).size().reset_index(name="Count")
     driver_data = driver_data[driver_data["Rating"].notna()]
@@ -537,130 +572,140 @@ with col6:
     priority_chart.update_traces(textposition="auto")
     st.plotly_chart(priority_chart)
 
-# --- Project Completion Risk Assessment Section ---
-st.subheader("Project Completion Risk Assessment (Powered by AI)")
+# --- Project Completion Assessment Section ---
+st.subheader("Project Completion Assessment (Powered by AI)")
 
 # Button to trigger the popup (moved to this section)
-if st.button("Configure Risk Parameters"):
-    st.session_state.show_risk_popup = True
+if st.button("Configure Assessment Parameters"):
+    st.session_state.show_assessment_popup = True
 
 # Display the popup if triggered
-if st.session_state.show_risk_popup:
-    with st.form("risk_parameters_form"):
-        st.subheader("Risk Analyzer Parameters")
+if st.session_state.show_assessment_popup:
+    with st.form("assessment_parameters_form"):
+        st.subheader("Assessment Analyzer Parameters")
         
-        # Category: Base Risk
-        st.subheader("Base Risk")
-        base_risk = st.number_input("Base Risk Score", min_value=0, max_value=100, value=st.session_state.base_risk, step=1)
+        # Category: Base Assessment
+        st.subheader("Base Assessment")
+        base_assessment = st.number_input("Base Assessment Score", min_value=0, max_value=100, value=st.session_state.base_assessment, step=1)
+        st.write("The starting score for all projects (0-100). Higher values mean better completion likelihood.")
         
-        # Category: Driver Weights
-        st.subheader("Driver Weights")
-        driver_safety_high_weight = st.number_input("Driver Safety 'High' Weight", min_value=0, max_value=100, value=st.session_state.driver_safety_high_weight, step=1)
-        other_driver_high_weight = st.number_input("Other Driver 'High' Weight", min_value=0, max_value=100, value=st.session_state.other_driver_high_weight, step=1)
-        driver_medium_weight = st.number_input("Driver 'Medium' Weight", min_value=0, max_value=100, value=st.session_state.driver_medium_weight, step=1)
+        # Category: Driver Deductions
+        st.subheader("Driver Deductions")
+        driver_safety_high_deduction = st.number_input("Driver Safety 'High' Deduction", min_value=0, max_value=100, value=st.session_state.driver_safety_high_deduction, step=1)
+        st.write("Points deducted if Driver Safety is rated 'High', indicating a significant concern.")
+        other_driver_high_deduction = st.number_input("Other Driver 'High' Deduction", min_value=0, max_value=100, value=st.session_state.other_driver_high_deduction, step=1)
+        st.write("Points deducted if other drivers (Regulatory, Compliance) are rated 'High'.")
+        driver_medium_deduction = st.number_input("Driver 'Medium' Deduction", min_value=0, max_value=100, value=st.session_state.driver_medium_deduction, step=1)
+        st.write("Points deducted if any driver is rated 'Medium'.")
         
-        # Category: Cost and Priority Penalties
-        st.subheader("Cost and Priority Penalties")
-        cost_overrun_penalty = st.number_input("Cost Overrun Penalty (>10%)", min_value=0, max_value=100, value=st.session_state.cost_overrun_penalty, step=1)
+        # Category: Cost and Priority Deductions
+        st.subheader("Cost and Priority Deductions")
+        cost_overrun_deduction = st.number_input("Cost Overrun Deduction (>10%)", min_value=0, max_value=100, value=st.session_state.cost_overrun_deduction, step=1)
+        st.write("Points deducted if Projected Cost exceeds Standard Cost by more than 10%.")
         priority_threshold = st.number_input("Priority Ranking Threshold", min_value=1, max_value=10, value=st.session_state.priority_threshold, step=1)
-        priority_penalty = st.number_input("Priority Ranking Penalty", min_value=0, max_value=100, value=st.session_state.priority_penalty, step=1)
+        st.write("Threshold above which a Priority Ranking triggers a deduction.")
+        priority_deduction = st.number_input("Priority Ranking Deduction", min_value=0, max_value=100, value=st.session_state.priority_deduction, step=1)
+        st.write("Points deducted if Priority Ranking exceeds the threshold.")
         
-        # Category: Readiness Penalties
-        st.subheader("Readiness Penalties")
+        # Category: Readiness Bonuses
+        st.subheader("Readiness Bonuses")
         readiness_threshold = st.number_input("Project Readiness Threshold (%)", min_value=0, max_value=100, value=st.session_state.readiness_threshold, step=1)
-        readiness_penalty = st.number_input("Project Readiness Penalty", min_value=0, max_value=100, value=st.session_state.readiness_penalty, step=1)
+        st.write("Threshold above which Project Readiness Ranking earns a bonus.")
+        readiness_bonus = st.number_input("Project Readiness Bonus", min_value=0, max_value=100, value=st.session_state.readiness_bonus, step=1)
+        st.write("Points added if Project Readiness Ranking meets or exceeds the threshold.")
         
         # Category: Alert Threshold
         st.subheader("Alert Threshold")
-        alert_threshold = st.number_input("Alert Risk Threshold", min_value=0, max_value=100, value=st.session_state.alert_threshold, step=1)
+        alert_threshold = st.number_input("Alert Assessment Threshold", min_value=0, max_value=100, value=st.session_state.alert_threshold, step=1)
+        st.write("Threshold below which an alert is triggered for low assessment scores (low scores indicate poor completion likelihood).")
 
         # Submit and Close buttons
         col1, col2 = st.columns(2)
         with col1:
             if st.form_submit_button("Save Parameters"):
                 # Update session state with new values
-                st.session_state.base_risk = base_risk
-                st.session_state.driver_safety_high_weight = driver_safety_high_weight
-                st.session_state.other_driver_high_weight = other_driver_high_weight
-                st.session_state.driver_medium_weight = driver_medium_weight
-                st.session_state.cost_overrun_penalty = cost_overrun_penalty
+                st.session_state.base_assessment = base_assessment
+                st.session_state.driver_safety_high_deduction = driver_safety_high_deduction
+                st.session_state.other_driver_high_deduction = other_driver_high_deduction
+                st.session_state.driver_medium_deduction = driver_medium_deduction
+                st.session_state.cost_overrun_deduction = cost_overrun_deduction
                 st.session_state.priority_threshold = priority_threshold
-                st.session_state.priority_penalty = priority_penalty
+                st.session_state.priority_deduction = priority_deduction
                 st.session_state.readiness_threshold = readiness_threshold
-                st.session_state.readiness_penalty = readiness_penalty
+                st.session_state.readiness_bonus = readiness_bonus
                 st.session_state.alert_threshold = alert_threshold
-                st.session_state.show_risk_popup = False
+                st.session_state.show_assessment_popup = False
                 st.success("Parameters saved successfully!")
         with col2:
             if st.form_submit_button("Close"):
-                st.session_state.show_risk_popup = False
+                st.session_state.show_assessment_popup = False
 
 # Retrieve parameters from session state for use in calculations
-base_risk = st.session_state.base_risk
-driver_safety_high_weight = st.session_state.driver_safety_high_weight
-other_driver_high_weight = st.session_state.other_driver_high_weight
-driver_medium_weight = st.session_state.driver_medium_weight
-cost_overrun_penalty = st.session_state.cost_overrun_penalty
+base_assessment = st.session_state.base_assessment
+driver_safety_high_deduction = st.session_state.driver_safety_high_deduction
+other_driver_high_deduction = st.session_state.other_driver_high_deduction
+driver_medium_deduction = st.session_state.driver_medium_deduction
+cost_overrun_deduction = st.session_state.cost_overrun_deduction
 priority_threshold = st.session_state.priority_threshold
-priority_penalty = st.session_state.priority_penalty
+priority_deduction = st.session_state.priority_deduction
 readiness_threshold = st.session_state.readiness_threshold
-readiness_penalty = st.session_state.readiness_penalty
+readiness_bonus = st.session_state.readiness_bonus
 alert_threshold = st.session_state.alert_threshold
 
-# Compute risk scores for each program
-def compute_risk_score(row, base_risk, driver_safety_high_weight, other_driver_high_weight, driver_medium_weight,
-                       cost_overrun_penalty, priority_threshold, priority_penalty, readiness_threshold, readiness_penalty):
-    risk_score = base_risk
+# Compute assessment scores for each program (higher is better)
+def compute_assessment_score(row, base_assessment, driver_safety_high_deduction, other_driver_high_deduction, driver_medium_deduction,
+                             cost_overrun_deduction, priority_threshold, priority_deduction, readiness_threshold, readiness_bonus):
+    assessment_score = base_assessment  # Start with a high base score
 
     driver_columns = ["Driver Safety", "Driver Regulatory", "Driver Compliance"]
     for driver in driver_columns:
         if row[driver] == "High":
             if driver == "Driver Safety":
-                risk_score += driver_safety_high_weight
+                assessment_score -= driver_safety_high_deduction  # Deduct for high safety concerns
             else:
-                risk_score += other_driver_high_weight
+                assessment_score -= other_driver_high_deduction  # Deduct for other high concerns
         elif row[driver] == "Medium":
-            risk_score += driver_medium_weight
+            assessment_score -= driver_medium_deduction  # Deduct for medium concerns
 
     if row["StandardCost"] > 0 and row["ProjectedCost"] / row["StandardCost"] > 1.1:
-        risk_score += cost_overrun_penalty
+        assessment_score -= cost_overrun_deduction  # Deduct for cost overrun
 
     if row["Priority Ranking "] > priority_threshold:
-        risk_score += priority_penalty
+        assessment_score -= priority_deduction  # Deduct for high priority
 
-    if row["Project Readiness Ranking"] < readiness_threshold:
-        risk_score += readiness_penalty
+    if row["Project Readiness Ranking"] >= readiness_threshold:
+        assessment_score += readiness_bonus  # Add bonus for high readiness
 
-    return min(risk_score, 100)
+    return max(min(assessment_score, 100), 0)  # Cap between 0 and 100
 
-# Apply risk scoring to filtered data with user-defined parameters
-filtered_data["Risk Score"] = filtered_data.apply(
-    lambda row: compute_risk_score(row, base_risk, driver_safety_high_weight, other_driver_high_weight, driver_medium_weight,
-                                   cost_overrun_penalty, priority_threshold, priority_penalty, readiness_threshold, readiness_penalty),
+# Apply assessment scoring to filtered data with user-defined parameters
+filtered_data["Assessment Score"] = filtered_data.apply(
+    lambda row: compute_assessment_score(row, base_assessment, driver_safety_high_deduction, other_driver_high_deduction, driver_medium_deduction,
+                                         cost_overrun_deduction, priority_threshold, priority_deduction, readiness_threshold, readiness_bonus),
     axis=1
 )
 
-# Aggregate risk scores by Program NAME
-risk_data = filtered_data.groupby("Program NAME")["Risk Score"].mean().reset_index()
+# Aggregate assessment scores by Program NAME
+assessment_data = filtered_data.groupby("Program NAME")["Assessment Score"].mean().reset_index()
 
-# Display average risk score as a metric
-average_risk = risk_data["Risk Score"].mean() if not risk_data.empty else 0
-st.metric(label="Average Risk Score", value=f"{average_risk:.1f}/100", delta=None)
+# Display average assessment score as a metric
+average_assessment = assessment_data["Assessment Score"].mean() if not assessment_data.empty else 0
+st.metric(label="Average Assessment Score", value=f"{average_assessment:.1f}/100", delta=None)
 
-# Add warning if any program exceeds user-defined risk threshold
-if not risk_data.empty and risk_data["Risk Score"].max() > alert_threshold:
-    st.warning(f"High Risk Detected: Review programs with risk scores above {alert_threshold}!")
+# Add warning if any program falls below user-defined assessment threshold
+if not assessment_data.empty and assessment_data["Assessment Score"].min() < alert_threshold:
+    st.warning(f"Low Assessment Detected: Review programs with assessment scores below {alert_threshold}!")
 
-# Plot risk scores as a bar chart
-risk_chart = px.bar(risk_data, 
-                    x="Program NAME", 
-                    y="Risk Score", 
-                    title="",
-                    text=risk_data["Risk Score"].apply(lambda x: f'{x:.1f}'),
-                    color="Risk Score",
-                    color_continuous_scale=px.colors.sequential.Reds)
-risk_chart.update_layout(
-    yaxis_title="Risk Score (0-100)",
+# Plot assessment scores as a bar chart (higher is better, so use a reversed color scale)
+assessment_chart = px.bar(assessment_data, 
+                          x="Program NAME", 
+                          y="Assessment Score", 
+                          title="",
+                          text=assessment_data["Assessment Score"].apply(lambda x: f'{x:.1f}'),
+                          color="Assessment Score",
+                          color_continuous_scale=px.colors.sequential.Greens)  # Green for high scores (good)
+assessment_chart.update_layout(
+    yaxis_title="Assessment Score (0-100)",
     yaxis_title_font_color="#2c3e50",
     xaxis_title="Program Name",
     xaxis_title_font_color="#2c3e50",
@@ -671,13 +716,104 @@ risk_chart.update_layout(
     paper_bgcolor="rgba(255, 255, 255, 0.5)",
     plot_bgcolor="rgba(255, 255, 255, 0.5)"
 )
-risk_chart.update_traces(textposition="auto")
-st.plotly_chart(risk_chart)
+assessment_chart.update_traces(textposition="auto")
+st.plotly_chart(assessment_chart)
 
-# --- Budget Certainty Tool Section ---
+# --- Budget Certainty Assessment Tool Section ---
 if year_options:  # Show the section if there are years in the data
     st.subheader("Budget Certainty Assessment Tool")
-    
+
+    # Button to trigger the probability parameters popup
+    if st.button("Configure Probability Parameters"):
+        st.session_state.show_probability_popup = True
+
+    # Display the popup if triggered
+    if st.session_state.show_probability_popup:
+        with st.form("probability_parameters_form"):
+            st.subheader("Budget Probability Parameters")
+            
+            # Category: Base Probability
+            st.subheader("Base Probability")
+            base_probability = st.number_input(
+                "Base Probability (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=st.session_state.base_probability * 100,
+                step=1.0
+            )
+            st.write("The starting probability (0-100%) before adjustments for cost overrun and assessment score. Higher values increase the overall probability.")
+            
+            # Category: Cost Overrun Sensitivity
+            st.subheader("Cost Overrun Sensitivity")
+            cost_overrun_sensitivity = st.number_input(
+                "Cost Overrun Sensitivity Factor",
+                min_value=0.0,
+                max_value=10.0,
+                value=st.session_state.cost_overrun_sensitivity,
+                step=0.1
+            )
+            st.write("Controls how much a cost overrun (Projected Cost / Standard Cost) reduces the probability. A value of 1 means the cost ratio directly scales the probability; higher values amplify the impact of cost overruns.")
+            
+            # Category: Budget Surplus Boost
+            st.subheader("Budget Surplus Boost")
+            budget_surplus_boost = st.number_input(
+                "Budget Surplus Boost Factor",
+                min_value=0.0,
+                max_value=5.0,
+                value=st.session_state.budget_surplus_boost,
+                step=0.1
+            )
+            st.write("Amplifies the effect of a budget surplus (budget beyond projected cost) on the overall probability. A value of 1 means the surplus scales linearly; higher values increase the probability more with larger surpluses.")
+            
+            # Category: Minimum Probability Cap
+            st.subheader("Minimum Probability Cap")
+            min_probability_cap = st.number_input(
+                "Minimum Probability Cap (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=st.session_state.min_probability_cap * 100,
+                step=1.0
+            )
+            st.write("Sets the minimum probability (0-100%) for any individual project, preventing the probability from dropping too low. This ensures a baseline confidence level.")
+            
+            # Category: Assessment Score Weight
+            st.subheader("Assessment Score Weight")
+            assessment_score_weight = st.number_input(
+                "Assessment Score Weight Factor",
+                min_value=0.0,
+                max_value=5.0,
+                value=st.session_state.assessment_score_weight,
+                step=0.1
+            )
+            st.write("Adjusts the influence of the Assessment Score (0-100) on the probability. A value of 1 means the score scales the probability directly (Score / 100); higher values increase the impact of a high assessment score.")
+            
+            # Category: Assessment Score Impact (Informational)
+            st.subheader("Assessment Score Impact (Set in Project Completion Assessment)")
+            st.write("The Assessment Score (0-100) from the Project Completion Assessment section is used to scale the probability. A higher score increases the probability (Assessment Score / 100, weighted by the Assessment Score Weight). Adjust this in the 'Configure Assessment Parameters' section above.")
+
+            # Submit and Close buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("Save Parameters"):
+                    # Update session state with new values
+                    st.session_state.base_probability = base_probability / 100  # Convert percentage to decimal
+                    st.session_state.cost_overrun_sensitivity = cost_overrun_sensitivity
+                    st.session_state.budget_surplus_boost = budget_surplus_boost
+                    st.session_state.min_probability_cap = min_probability_cap / 100  # Convert percentage to decimal
+                    st.session_state.assessment_score_weight = assessment_score_weight
+                    st.session_state.show_probability_popup = False
+                    st.success("Probability parameters saved successfully!")
+            with col2:
+                if st.form_submit_button("Close"):
+                    st.session_state.show_probability_popup = False
+
+    # Retrieve probability parameters
+    base_probability = st.session_state.base_probability
+    cost_overrun_sensitivity = st.session_state.cost_overrun_sensitivity
+    budget_surplus_boost = st.session_state.budget_surplus_boost
+    min_probability_cap = st.session_state.min_probability_cap
+    assessment_score_weight = st.session_state.assessment_score_weight
+
     analysis_year = st.selectbox("Select Year for Budget Analysis", options=year_options, index=0 if year_options else None)
     
     annual_budget = st.number_input("Enter Annual Budget ($)", min_value=0, value=40000000, step=1000000)
@@ -687,34 +823,37 @@ if year_options:  # Show the section if there are years in the data
     total_projected_cost_year = budget_data["ProjectedCost"].sum()
     total_standard_cost_year = budget_data["StandardCost"].sum()
     
-    def calculate_budget_probability(row):
-        base_probability = 0.9
+    def calculate_budget_probability(row, base_probability, cost_overrun_sensitivity, budget_surplus_boost, min_probability_cap, assessment_score_weight):
         cost_ratio = row["ProjectedCost"] / row["StandardCost"] if row["StandardCost"] > 0 else 1.0
-        risk_score = row["Risk Score"]
-        risk_impact = 1 - (risk_score / 100)
-        probability = base_probability * (1 / cost_ratio) * risk_impact
-        return max(0, min(1, probability))
+        assessment_score = row["Assessment Score"]
+        assessment_impact = (assessment_score / 100) ** assessment_score_weight  # Weighted assessment impact
+        cost_impact = (1 / cost_ratio) ** cost_overrun_sensitivity  # Adjust cost impact with sensitivity
+        probability = base_probability * cost_impact * assessment_impact
+        return max(min_probability_cap, min(1, probability))  # Apply minimum cap and maximum of 1
     
-    budget_data["Risk Score"] = budget_data.apply(
-        lambda row: compute_risk_score(row, base_risk, driver_safety_high_weight, other_driver_high_weight, driver_medium_weight,
-                                       cost_overrun_penalty, priority_threshold, priority_penalty, readiness_threshold, readiness_penalty),
+    budget_data["Assessment Score"] = budget_data.apply(
+        lambda row: compute_assessment_score(row, base_assessment, driver_safety_high_deduction, other_driver_high_deduction, driver_medium_deduction,
+                                             cost_overrun_deduction, priority_threshold, priority_deduction, readiness_threshold, readiness_bonus),
         axis=1
     )
-    budget_data["Budget Probability"] = budget_data.apply(calculate_budget_probability, axis=1)
+    budget_data["Budget Probability"] = budget_data.apply(
+        lambda row: calculate_budget_probability(row, base_probability, cost_overrun_sensitivity, budget_surplus_boost, min_probability_cap, assessment_score_weight),
+        axis=1
+    )
     
-    # Corrected budget factor logic
-    budget_factor = min(1, annual_budget / total_projected_cost_year) if total_projected_cost_year > 0 else 1
+    # Budget factor logic: Scale with surplus, boosted by budget_surplus_boost
+    budget_factor = min(1.5, 1 + budget_surplus_boost * (annual_budget - total_projected_cost_year) / (2 * total_projected_cost_year)) if total_projected_cost_year > 0 else 1
     base_overall_probability = budget_data["Budget Probability"].mean() if not budget_data.empty else 0
     overall_probability = base_overall_probability * budget_factor
     overall_probability = max(0, min(1, overall_probability))
     
     def propose_action(row):
         cost_ratio = row["ProjectedCost"] / row["StandardCost"] if row["StandardCost"] > 0 else 1.0
-        if row["Risk Score"] > 70 and row["Budget Probability"] < 0.5:
+        if row["Assessment Score"] < 30 and row["Budget Probability"] < 0.5:  # Low score is bad
             return "Pause"
-        elif row["Risk Score"] < 30 and row["Budget Probability"] > 0.8:
+        elif row["Assessment Score"] > 70 and row["Budget Probability"] > 0.8:  # High score is good
             return "Accelerate"
-        elif row["Risk Score"] > 50 and row["Budget Probability"] < 0.7:
+        elif row["Assessment Score"] < 50 and row["Budget Probability"] < 0.7:
             return "Slow Down"
         elif cost_ratio > 1.2 and row["Budget Probability"] < 0.6:
             return "Defer to Future Years"
@@ -731,10 +870,10 @@ if year_options:  # Show the section if there are years in the data
     st.metric(label="Overall Probability to Hit Budget", value=f"{overall_probability:.0%}")
     
     st.subheader("Project Recommendations")
-    st.dataframe(budget_data[["Program NAME", "ProjectedCost", "StandardCost", "Risk Score", "Budget Probability", "Proposed Action"]].style.format({
+    st.dataframe(budget_data[["Program NAME", "ProjectedCost", "StandardCost", "Assessment Score", "Budget Probability", "Proposed Action"]].style.format({
         "ProjectedCost": "${:,.0f}",
         "StandardCost": "${:,.0f}",
-        "Risk Score": "{:.1f}",
+        "Assessment Score": "{:.1f}",
         "Budget Probability": "{:.0%}"
     }).set_properties(**{
         'background-color': '#f9f9f9',
@@ -745,30 +884,6 @@ if year_options:  # Show the section if there are years in the data
         'selector': 'th',
         'props': [('background-color', '#2980b9'), ('color', 'white'), ('font-weight', 'bold')]
     }]))
-
-# --- Prioritization Section ---
-st.subheader("Prioritized Projects")
-
-sort_column = st.selectbox("Sort by", options=data.columns)
-sort_order = st.radio("Order", options=["Ascending", "Descending"])
-ascending = True if sort_order == "Ascending" else False
-
-sorted_data = filtered_data.sort_values(by=sort_column, ascending=ascending)
-
-if "Priority Ranking " in sorted_data.columns and "Required Work Completion Date" in sorted_data.columns:
-    sorted_data["Days_Until_Due"] = (pd.to_datetime(sorted_data["Required Work Completion Date"]) - pd.Timestamp.now()).dt.days
-    sorted_data["Urgency"] = sorted_data["Priority Ranking "] * (1 / (sorted_data["Days_Until_Due"] + 1))
-    sorted_data = sorted_data.sort_values(by="Urgency", ascending=False)
-
-st.dataframe(sorted_data[["Program NAME", "Priority Ranking ", "Required Work Completion Date", "Fully Scoped", "Urgency", "Risk Score"]].style.set_properties(**{
-    'background-color': '#f9f9f9',
-    'border-color': '#dddddd',
-    'font-family': 'Arial, sans-serif',
-    'text-align': 'center'
-}).set_table_styles([{
-    'selector': 'th',
-    'props': [('background-color', '#2980b9'), ('color', 'white'), ('font-weight', 'bold')]
-}]))
 
 # --- Project Locations Map ---
 st.subheader("Project Locations Map")
