@@ -83,10 +83,6 @@ else:
 st.title("AIPEX by Enabled Performance")
 st.write("A professional tool for managing and visualizing oil and gas project data.")
 
-# Initialize session state for feedback and assessment parameters
-if 'feedback_list' not in st.session_state:
-    st.session_state.feedback_list = []
-
 # Initialize session state for assessment parameters with default values
 if 'base_assessment' not in st.session_state:
     st.session_state.base_assessment = 90  # Start high, as higher is better
@@ -490,7 +486,7 @@ with col4:
     driver_data = filtered_data[driver_columns].melt(var_name="Driver Type", value_name="Rating")
     
     # Rename "Driver Operational" to "Reliability"
-    driver_data["Driver Type"] = driver_data["Driver Type"].replace("Driver Operational", "Driver Reliability")
+    driver_data["Driver Type"] = driver_data["Driver Type"].replace("Driver Operational", "Reliability")
     
     driver_data = driver_data.groupby(["Driver Type", "Rating"]).size().reset_index(name="Count")
     driver_data = driver_data[driver_data["Rating"].notna()]
@@ -816,7 +812,28 @@ if year_options:  # Show the section if there are years in the data
 
     analysis_year = st.selectbox("Select Year for Budget Analysis", options=year_options, index=0 if year_options else None)
     
-    annual_budget = st.number_input("Enter Annual Budget ($)", min_value=0, value=40000000, step=1000000)
+    # Use text_input to allow comma-formatted budget input
+    default_budget = 40000000  # Default value as before
+    budget_input = st.text_input(
+        "Enter Annual Budget ($)", 
+        value=f"{default_budget:,}",  # Display with commas
+        help="Enter the annual budget in dollars. Use commas for thousands (e.g., 40,000,000)."
+    )
+    
+    # Parse the input: Remove commas and convert to integer
+    try:
+        # Remove commas and convert to integer
+        annual_budget = int(budget_input.replace(',', '').replace('$', '').strip())
+        # Ensure the budget is not negative
+        if annual_budget < 0:
+            st.error("Annual budget cannot be negative. Please enter a value greater than or equal to 0.")
+            annual_budget = 0
+    except ValueError:
+        st.error("Please enter a valid number for the annual budget (e.g., 40,000,000).")
+        annual_budget = default_budget  # Fallback to default if input is invalid
+    
+    # Update the displayed value with commas for user feedback
+    st.write(f"Annual Budget Entered: ${annual_budget:,}")
     
     budget_data = filtered_data[filtered_data["Planned Year"] == analysis_year].copy()
     
@@ -927,43 +944,6 @@ for index, row in location_counts.iterrows():
 
 # Display the map in Streamlit
 folium_static(m)
-
-# --- Feedback Section ---
-st.subheader("Provide Feedback")
-with st.form("feedback_form"):
-    feedback = st.text_area("Please share your feedback on the AIPEX dashboard:")
-    submit = st.form_submit_button("Submit Feedback")
-    if submit:
-        feedback_entry = f"{datetime.now()}: {feedback}"
-        st.session_state.feedback_list.append(feedback_entry)
-        st.success("Thank you for your feedback!")
-
-# --- View Feedback Section ---
-if st.sidebar.checkbox("View Feedback (Admin Only)", value=False):
-    st.sidebar.subheader("Admin Authentication")
-    admin_password = st.sidebar.text_input("Enter Admin Password", type="password")
-    correct_password = "admin123"  # Hardcoded for simplicity; use env variables in production
-    if admin_password == correct_password:
-        st.subheader("Feedback History")
-        if st.session_state.feedback_list:
-            # Display feedback entries
-            for entry in st.session_state.feedback_list:
-                st.write(entry)
-            # Prepare feedback for download
-            feedback_df = pd.DataFrame(st.session_state.feedback_list, columns=["Feedback"])
-            feedback_df[['Timestamp', 'Comment']] = feedback_df['Feedback'].str.split(": ", n=1, expand=True)
-            feedback_df = feedback_df.drop(columns=['Feedback'])
-            feedback_csv = feedback_df.to_csv(index=False)
-            st.download_button(
-                label="Download Feedback as CSV",
-                data=feedback_csv,
-                file_name="feedback_export.csv",
-                mime="text/csv",
-            )
-        else:
-            st.write("No feedback submitted yet.")
-    else:
-        st.sidebar.warning("Incorrect password. Please enter the correct admin password to view feedback.")
 
 # --- Run Instructions ---
 # Save as app.py and run with: streamlit run app.py
