@@ -9,7 +9,7 @@ import io
 import folium
 from streamlit_folium import folium_static
 
-# Custom CSS with background image
+# Custom CSS with background image and layout adjustments
 def get_base64(bin_file):
     with open(bin_file, "rb") as f:
         data = f.read()
@@ -47,6 +47,10 @@ st.markdown(
     h2 {{
         color: #34495e;
         font-family: Arial, sans-serif;
+        margin-bottom: 20px; /* Standardized spacing between sections */
+    }}
+    .chart-container {{
+        margin-bottom: 20px; /* Consistent spacing below charts */
     }}
     </style>
     """,
@@ -133,7 +137,6 @@ with st.sidebar.expander("Project Filters", expanded=True):
     filtered_data = data.copy()
     if selected_years:
         filtered_data = filtered_data[filtered_data["Planned Year"].isin(selected_years)]
-
     classification_column = "PROGRAM CLASSIFICATION"
     if classification_column in filtered_data.columns:
         classification_options = sorted(filtered_data[classification_column].dropna().unique().tolist())
@@ -145,61 +148,35 @@ with st.sidebar.expander("Project Filters", expanded=True):
     # Filter 3: Program Names
     if selected_classifications and classification_column in filtered_data.columns:
         filtered_data = filtered_data[filtered_data[classification_column].isin(selected_classifications)]
-
     program_options = sorted(filtered_data["Program NAME"].dropna().unique().tolist())
     selected_programs = st.multiselect("Select Program Names", options=program_options, default=[])
 
-    # Filter 4: Custom Filter
+    # Filter 4: Predicted Repair Type (Single Selection)
     if selected_programs:
         filtered_data = filtered_data[filtered_data["Program NAME"].isin(selected_programs)]
-
-    filter_column = st.selectbox("Select Column to Filter", options=filtered_data.columns)
-    filter_value_options = sorted(filtered_data[filter_column].dropna().unique().tolist())
-    selected_filter_values = st.multiselect(f"Select {filter_column} Values", options=filter_value_options, default=[])
-
-    # Filter 5: Priority Ranking
-    if not filtered_data["Priority Ranking "].empty:
-        min_priority = int(filtered_data["Priority Ranking "].min())
-        max_priority = int(filtered_data["Priority Ranking "].max())
-        if min_priority == max_priority:
-            min_priority = max(1, min_priority - 1)
-            max_priority = min_priority + 2
-        default_value = max_priority
-    else:
-        min_priority = 1
-        max_priority = 10
-        default_value = 10
-    priority_max = st.slider("Max Priority Ranking (inclusive)", min_value=min_priority, max_value=max_priority, value=default_value)
-
-    # Filter 6: FEATURE TYPE
-    feature_type_options = sorted(filtered_data["FEATURE TYPE"].dropna().unique().tolist()) if "FEATURE TYPE" in filtered_data.columns else []
-    selected_feature_types = st.multiselect("Select Feature Types", options=feature_type_options, default=[])
-    if selected_feature_types and "FEATURE TYPE" in filtered_data.columns:
-        filtered_data = filtered_data[filtered_data["FEATURE TYPE"].isin(selected_feature_types)]
+    predicted_repair_type_options = sorted(filtered_data["Predicted Repair Type"].dropna().unique().tolist()) if "Predicted Repair Type" in filtered_data.columns else []
+    if not predicted_repair_type_options:
+        st.warning("No 'Predicted Repair Type' data available in the dataset.")
+    selected_predicted_repair_type = st.selectbox("Select Predicted Repair Type", options=["Choose an option"] + predicted_repair_type_options, index=0)
 
     # Reset Button
     if st.button("Reset Filters"):
         selected_years = []
         selected_classifications = []
         selected_programs = []
-        selected_filter_values = []
-        selected_feature_types = []
+        selected_predicted_repair_type = "Choose an option"
         st.experimental_rerun()
 
 # Apply filters
 filtered_data = data.copy()
 if selected_years:
     filtered_data = filtered_data[filtered_data["Planned Year"].isin(selected_years)]
-if selected_classifications and classification_column in filtered_data.columns:
-    filtered_data = filtered_data[filtered_data[classification_column].isin(selected_classifications)]
+if selected_classifications and "PROGRAM CLASSIFICATION" in filtered_data.columns:
+    filtered_data = filtered_data[filtered_data["PROGRAM CLASSIFICATION"].isin(selected_classifications)]
 if selected_programs:
     filtered_data = filtered_data[filtered_data["Program NAME"].isin(selected_programs)]
-if selected_filter_values:
-    filtered_data = filtered_data[filtered_data[filter_column].isin(selected_filter_values)]
-if "Priority Ranking " in filtered_data.columns:
-    filtered_data = filtered_data[filtered_data["Priority Ranking "] <= priority_max]
-if selected_feature_types and "FEATURE TYPE" in filtered_data.columns:
-    filtered_data = filtered_data[filtered_data["FEATURE TYPE"].isin(selected_feature_types)]
+if selected_predicted_repair_type != "Choose an option" and "Predicted Repair Type" in filtered_data.columns:
+    filtered_data = filtered_data[filtered_data["Predicted Repair Type"] == selected_predicted_repair_type]
 
 # Display filtered data
 st.subheader("Filtered Project Data")
@@ -207,10 +184,30 @@ st.dataframe(filtered_data)
 
 # Key Metrics
 st.subheader("Key Metrics")
-total_projected_cost = filtered_data["ProjectedCost"].sum()  # Full dollar amount
-readiness_percentage = filtered_data["Project Readiness Ranking"].mean() if not filtered_data.empty else 0
-st.metric(label="Total Projected Cost", value=f"${total_projected_cost:,.0f}")
-st.metric(label="Average Project Readiness", value=f"{readiness_percentage:.1f}")
+col_metrics1, col_metrics2 = st.columns([1, 1])
+with col_metrics1:
+    total_projected_cost = filtered_data["ProjectedCost"].sum()  # Full dollar amount
+    st.metric(label="Total Projected Cost", value=f"${total_projected_cost:,.0f}")
+with col_metrics2:
+    readiness_percentage = filtered_data["Project Readiness Ranking"].mean() if not filtered_data.empty else 0
+    st.metric(label="Average Project Readiness", value=f"{readiness_percentage:.1f}")
+
+# Additional Metrics under Key Metrics
+col_add_metrics1, col_add_metrics2 = st.columns([1, 1])
+with col_add_metrics1:
+    total_projects = len(filtered_data)
+    fully_scoped_projects = len(filtered_data[filtered_data["Fully Scoped"] == "Yes"])
+    percent_fully_scoped = (fully_scoped_projects / total_projects * 100) if total_projects > 0 else 0
+    st.metric(label="% Portfolio Fully Scoped", value=f"{percent_fully_scoped:.1f}%")
+with col_add_metrics2:
+    total_projected_cost = filtered_data["ProjectedCost"].sum()
+    total_standard_cost = filtered_data["StandardCost"].sum()
+    total_actual_cost = filtered_data["Actual Cost"].sum()
+    cost_table_data = pd.DataFrame({
+        "Cost Type": ["Total Projected Cost", "Total Standard Cost", "Total Actual Cost"],
+        "Amount": [f"${total_projected_cost:,.0f}", f"${total_standard_cost:,.0f}", f"${total_actual_cost:,.0f}"]
+    })
+    st.table(cost_table_data)
 
 # --- Charts Section ---
 st.subheader("Visualizations")
@@ -225,218 +222,255 @@ col5, col6 = st.columns([1, 1])
 
 # Bar chart 1: Program Count by Scope (Row 1, Col 1)
 with col1:
-    # Calculate % Portfolio Fully Scoped
-    total_projects = len(filtered_data)
-    fully_scoped_projects = len(filtered_data[filtered_data["Fully Scoped"] == "Yes"])
-    percent_fully_scoped = (fully_scoped_projects / total_projects * 100) if total_projects > 0 else 0
-    st.metric(label="% Portfolio Fully Scoped", value=f"{percent_fully_scoped:.1f}%")
-
+    st.subheader("Program Count by Scope")
     if len(selected_programs) == 1:
-        st.subheader("Feature Type Count by Scope")
         chart_data = filtered_data[filtered_data["Program NAME"] == selected_programs[0]]
-        priority_chart = px.histogram(chart_data, 
-                                      x="FEATURE TYPE", 
-                                      color="Fully Scoped", 
-                                      title="",
-                                      barmode="group")
-        priority_chart.update_layout(
-            yaxis_title="Count", 
-            yaxis_title_font_color="#2c3e50",
-            xaxis_title="Feature Type",
-            xaxis_title_font_color="#2c3e50",
-            height=400,
-            width=600,
-            paper_bgcolor="rgba(255, 255, 255, 0.5)",
-            plot_bgcolor="rgba(255, 255, 255, 0.5)",
-            legend_title="Fully Scoped"
-        )
-    else:
-        st.subheader("Program Count by Scope")
-        if len(selected_years) > 1:
-            # Group by Program NAME, Fully Scoped, and Planned Year for multiple years
-            chart_data = filtered_data.groupby(['Program NAME', 'Fully Scoped', 'Planned Year']).size().reset_index(name='Count')
-            priority_chart = px.bar(chart_data, 
-                                    x="Program NAME", 
-                                    y="Count", 
-                                    color="Fully Scoped", 
-                                    facet_col="Planned Year", 
-                                    title="",
-                                    barmode="group",
-                                    category_orders={"Planned Year": sorted(selected_years)})
-            priority_chart.update_layout(
-                yaxis_title="Count", 
-                yaxis_title_font_color="#2c3e50",
-                xaxis_title="Program Name",
-                xaxis_title_font_color="#2c3e50",
-                height=400,
-                width=600,
-                paper_bgcolor="rgba(255, 255, 255, 0.5)",
-                plot_bgcolor="rgba(255, 255, 255, 0.5)",
-                legend_title="Fully Scoped"
+        if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
+            priority_chart = px.histogram(
+                chart_data, 
+                x="FEATURE TYPE", 
+                color="Fully Scoped", 
+                facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+                title="",
+                barmode="group"
             )
-            priority_chart.for_each_annotation(lambda a: a.update(text=a.text.split("=")[1]))
         else:
-            # Single year view
-            priority_chart = px.histogram(filtered_data, 
-                                          x="Program NAME", 
-                                          color="Fully Scoped", 
-                                          title="",
-                                          barmode="group")
-            priority_chart.update_layout(
-                yaxis_title="Count", 
-                yaxis_title_font_color="#2c3e50",
-                xaxis_title="Program Name",
-                xaxis_title_font_color="#2c3e50",
-                height=400,
-                width=600,
-                paper_bgcolor="rgba(255, 255, 255, 0.5)",
-                plot_bgcolor="rgba(255, 255, 255, 0.5)",
-                legend_title="Fully Scoped"
+            priority_chart = px.histogram(
+                chart_data, 
+                x="FEATURE TYPE", 
+                color="Fully Scoped", 
+                title="",
+                barmode="group"
             )
+        # Display unique Predicted Repair Types under the chart if a single program is selected
+        if len(selected_programs) == 1 and selected_predicted_repair_type != "Choose an option" and "Predicted Repair Type" in chart_data.columns:
+            unique_repair_types = chart_data["Predicted Repair Type"].dropna().unique().tolist()
+            st.write("**Predicted Repair Types in this Program:**", ", ".join(unique_repair_types))
+    else:
+        if len(selected_years) > 1:
+            chart_data = filtered_data.groupby(['Program NAME', 'Fully Scoped', 'Planned Year', 'Predicted Repair Type']).size().reset_index(name='Count')
+            if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
+                priority_chart = px.bar(
+                    chart_data, 
+                    x="Program NAME", 
+                    y="Count", 
+                    color="Fully Scoped", 
+                    facet_col="Planned Year", 
+                    facet_row="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+                    title="",
+                    barmode="group",
+                    category_orders={"Planned Year": sorted(selected_years)}
+                )
+            else:
+                priority_chart = px.bar(
+                    chart_data, 
+                    x="Program NAME", 
+                    y="Count", 
+                    color="Fully Scoped", 
+                    facet_col="Planned Year", 
+                    title="",
+                    barmode="group",
+                    category_orders={"Planned Year": sorted(selected_years)}
+                )
+        else:
+            chart_data = filtered_data.groupby(['Program NAME', 'Fully Scoped', 'Predicted Repair Type']).size().reset_index(name='Count')
+            if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
+                priority_chart = px.histogram(
+                    chart_data, 
+                    x="Program NAME", 
+                    y="Count",
+                    color="Fully Scoped", 
+                    facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+                    title="",
+                    barmode="group"
+                )
+            else:
+                priority_chart = px.histogram(
+                    chart_data, 
+                    x="Program NAME", 
+                    y="Count",
+                    color="Fully Scoped", 
+                    title="",
+                    barmode="group"
+                )
+    priority_chart.update_layout(
+        yaxis_title="Count", 
+        yaxis_title_font_color="#2c3e50",
+        xaxis_title="Program Name" if len(selected_programs) != 1 else "Feature Type",
+        xaxis_title_font_color="#2c3e50",
+        height=400,
+        width=600,
+        paper_bgcolor="rgba(255, 255, 255, 0.5)",
+        plot_bgcolor="rgba(255, 255, 255, 0.5)",
+        legend_title="Fully Scoped"
+    )
     priority_chart.update_traces(textposition="auto")
-    st.plotly_chart(priority_chart)
+    st.plotly_chart(priority_chart, use_container_width=True)
 
 # Bar chart 2: Total Cost by Program (Row 1, Col 2)
 with col2:
-    # Display total portfolio costs in a table
-    total_projected_cost = filtered_data["ProjectedCost"].sum()
-    total_standard_cost = filtered_data["StandardCost"].sum()
-    total_actual_cost = filtered_data["Actual Cost"].sum()
-    st.write("### Total Portfolio Costs")
-    cost_table_data = pd.DataFrame({
-        "Cost Type": ["Total Projected Cost", "Total Standard Cost", "Total Actual Cost"],
-        "Amount": [f"${total_projected_cost:,.0f}", f"${total_standard_cost:,.0f}", f"${total_actual_cost:,.0f}"]
-    })
-    st.table(cost_table_data)
-
+    st.subheader("Total Cost by Program")
     if len(selected_programs) == 1:
-        st.subheader("Total Cost by Feature Type")
         chart_data = filtered_data[filtered_data["Program NAME"] == selected_programs[0]]
         for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
             chart_data[col] = pd.to_numeric(chart_data[col], errors='coerce').fillna(0)
-        cost_data = chart_data[["FEATURE TYPE", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
-            id_vars=["FEATURE TYPE"], 
-            value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
-            var_name="Cost Type", 
-            value_name="Total Cost"
-        )
-        cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type"])["Total Cost"].sum().reset_index()
-        cost_data = cost_data[cost_data["Total Cost"] > 0]
-        cost_chart = px.bar(cost_data, 
-                            x="FEATURE TYPE", 
-                            y="Total Cost", 
-                            color="Cost Type", 
-                            title="",
-                            barmode="group", 
-                            text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'))
-        cost_chart.update_layout(
-            yaxis_title="Total Cost ($)",
-            yaxis_title_font_color="#2c3e50",
-            xaxis_title="Feature Type",
-            xaxis_title_font_color="#2c3e50",
-            yaxis_tickformat="$,.0f",
-            yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
-            height=400,
-            width=600,
-            showlegend=True,
-            paper_bgcolor="rgba(255, 255, 255, 0.5)",
-            plot_bgcolor="rgba(255, 255, 255, 0.5)"
-        )
-    else:
-        st.subheader("Total Cost by Program")
-        if len(selected_years) > 1:
-            # Group by Program NAME, Cost Type, and Planned Year for multiple years
-            for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
-                filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
-            cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year"]].melt(
-                id_vars=["Program NAME", "Planned Year"], 
+        if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
+            cost_data = chart_data[["FEATURE TYPE", "StandardCost", "ProjectedCost", "Actual Cost", "Predicted Repair Type"]].melt(
+                id_vars=["FEATURE TYPE", "Predicted Repair Type"], 
                 value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
                 var_name="Cost Type", 
                 value_name="Total Cost"
             )
-            cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year"])["Total Cost"].sum().reset_index()
+            cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
             cost_data = cost_data[cost_data["Total Cost"] > 0]
-            cost_chart = px.bar(cost_data, 
-                                x="Program NAME", 
-                                y="Total Cost", 
-                                color="Cost Type", 
-                                facet_col="Planned Year", 
-                                title="",
-                                barmode="group",
-                                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'),
-                                category_orders={"Planned Year": sorted(selected_years)})
-            cost_chart.update_layout(
-                yaxis_title="Total Cost ($)",
-                yaxis_title_font_color="#2c3e50",
-                xaxis_title="Program Name",
-                xaxis_title_font_color="#2c3e50",
-                yaxis_tickformat="$,.0f",
-                yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
-                height=400,
-                width=600,
-                showlegend=True,
-                paper_bgcolor="rgba(255, 255, 255, 0.5)",
-                plot_bgcolor="rgba(255, 255, 255, 0.5)"
+            cost_chart = px.bar(
+                cost_data, 
+                x="FEATURE TYPE", 
+                y="Total Cost", 
+                color="Cost Type", 
+                facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+                title="",
+                barmode="group", 
+                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}')
             )
-            cost_chart.for_each_annotation(lambda a: a.update(text=a.text.split("=")[1]))
         else:
-            # Single year view
-            for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
-                filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
-            cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
-                id_vars=["Program NAME"], 
+            cost_data = chart_data[["FEATURE TYPE", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
+                id_vars=["FEATURE TYPE"], 
                 value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
                 var_name="Cost Type", 
                 value_name="Total Cost"
             )
-            cost_data = cost_data.groupby(["Program NAME", "Cost Type"])["Total Cost"].sum().reset_index()
+            cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type"])["Total Cost"].sum().reset_index()
             cost_data = cost_data[cost_data["Total Cost"] > 0]
-            cost_chart = px.bar(cost_data, 
-                                x="Program NAME", 
-                                y="Total Cost", 
-                                color="Cost Type", 
-                                title="",
-                                barmode="group", 
-                                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'))
-            cost_chart.update_layout(
-                yaxis_title="Total Cost ($)",
-                yaxis_title_font_color="#2c3e50",
-                xaxis_title="Program Name",
-                xaxis_title_font_color="#2c3e50",
-                yaxis_tickformat="$,.0f",
-                yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
-                height=400,
-                width=600,
-                showlegend=True,
-                paper_bgcolor="rgba(255, 255, 255, 0.5)",
-                plot_bgcolor="rgba(255, 255, 255, 0.5)"
+            cost_chart = px.bar(
+                cost_data, 
+                x="FEATURE TYPE", 
+                y="Total Cost", 
+                color="Cost Type", 
+                title="",
+                barmode="group", 
+                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}')
             )
+    else:
+        if len(selected_years) > 1:
+            for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
+                filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
+            if "Predicted Repair Type" in filtered_data.columns and not filtered_data["Predicted Repair Type"].isna().all():
+                cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year", "Predicted Repair Type"]].melt(
+                    id_vars=["Program NAME", "Planned Year", "Predicted Repair Type"], 
+                    value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+                    var_name="Cost Type", 
+                    value_name="Total Cost"
+                )
+                cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
+                cost_data = cost_data[cost_data["Total Cost"] > 0]
+                cost_chart = px.bar(
+                    cost_data, 
+                    x="Program NAME", 
+                    y="Total Cost", 
+                    color="Cost Type", 
+                    facet_col="Planned Year", 
+                    facet_row="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+                    title="",
+                    barmode="group",
+                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'),
+                    category_orders={"Planned Year": sorted(selected_years)}
+                )
+            else:
+                cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year"]].melt(
+                    id_vars=["Program NAME", "Planned Year"], 
+                    value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+                    var_name="Cost Type", 
+                    value_name="Total Cost"
+                )
+                cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year"])["Total Cost"].sum().reset_index()
+                cost_data = cost_data[cost_data["Total Cost"] > 0]
+                cost_chart = px.bar(
+                    cost_data, 
+                    x="Program NAME", 
+                    y="Total Cost", 
+                    color="Cost Type", 
+                    facet_col="Planned Year", 
+                    title="",
+                    barmode="group",
+                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'),
+                    category_orders={"Planned Year": sorted(selected_years)}
+                )
+        else:
+            for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
+                filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
+            if "Predicted Repair Type" in filtered_data.columns and not filtered_data["Predicted Repair Type"].isna().all():
+                cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Predicted Repair Type"]].melt(
+                    id_vars=["Program NAME", "Predicted Repair Type"], 
+                    value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+                    var_name="Cost Type", 
+                    value_name="Total Cost"
+                )
+                cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
+                cost_data = cost_data[cost_data["Total Cost"] > 0]
+                cost_chart = px.bar(
+                    cost_data, 
+                    x="Program NAME", 
+                    y="Total Cost", 
+                    color="Cost Type", 
+                    facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+                    title="",
+                    barmode="group", 
+                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}')
+                )
+            else:
+                cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
+                    id_vars=["Program NAME"], 
+                    value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+                    var_name="Cost Type", 
+                    value_name="Total Cost"
+                )
+                cost_data = cost_data.groupby(["Program NAME", "Cost Type"])["Total Cost"].sum().reset_index()
+                cost_data = cost_data[cost_data["Total Cost"] > 0]
+                cost_chart = px.bar(
+                    cost_data, 
+                    x="Program NAME", 
+                    y="Total Cost", 
+                    color="Cost Type", 
+                    title="",
+                    barmode="group", 
+                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}')
+                )
+    cost_chart.update_layout(
+        yaxis_title="Total Cost ($)",
+        yaxis_title_font_color="#2c3e50",
+        xaxis_title="Feature Type" if len(selected_programs) == 1 else "Program Name",
+        xaxis_title_font_color="#2c3e50",
+        yaxis_tickformat="$,.0f",
+        yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
+        height=400,
+        width=600,
+        showlegend=True,
+        paper_bgcolor="rgba(255, 255, 255, 0.5)",
+        plot_bgcolor="rgba(255, 255, 255, 0.5)"
+    )
     cost_chart.update_traces(textposition="auto")
-    st.plotly_chart(cost_chart)
+    st.plotly_chart(cost_chart, use_container_width=True)
 
-# Bar chart 3: Spend Profile (Row 2, Col 1) - Updated to use monthly columns and multiple years
+# Bar chart 3: Spend Profile (Row 2, Col 1)
 with col3:
     st.subheader("Spend Profile")
     if selected_years:
         if len(selected_years) > 1:
-            # Allow selection of a single year for detailed view if multiple are selected
             selected_year = st.sidebar.selectbox("Select Single Planned Year for Detailed View (optional)", options=selected_years + [None], index=len(selected_years))
         else:
             selected_year = selected_years[0]
     else:
         selected_year = year_options[0] if year_options else None
 
-    # Filter data based on all selected years or the single selected year
     if selected_year:
         spend_data = filtered_data[filtered_data["Planned Year"] == selected_year].copy()
     else:
         spend_data = filtered_data.copy()
 
-    # Define expected monthly columns
     monthly_columns = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-    # Aggregate spend data for each year
     spend_profile_data = []
     if not spend_data.empty and any(col in spend_data.columns for col in monthly_columns):
         for year in selected_years if selected_years else [selected_year] if selected_year else []:
@@ -454,7 +488,7 @@ with col3:
             spend_chart = px.line(spend_profile_df,
                                 x="Month",
                                 y="Spend Amount",
-                                color="Year",  # Differentiate lines by year
+                                color="Year",
                                 title="",
                                 labels={"Spend Amount": "Spend Amount ($)", "Year": "Planned Year"})
             spend_chart.update_traces(mode="lines+markers")
@@ -463,16 +497,16 @@ with col3:
                 yaxis_title_font_color="#2c3e50",
                 xaxis_title="Month",
                 xaxis_title_font_color="#2c3e50",
-                xaxis={'tickmode': 'array', 'tickvals': months},  # Ensure all months are shown
+                xaxis={'tickmode': 'array', 'tickvals': months},
                 yaxis_tickformat="$,.0f",
                 yaxis_range=[0, spend_profile_df["Spend Amount"].max() * 1.1 if spend_profile_df["Spend Amount"].max() > 0 else 1000],
                 height=400,
                 width=600,
                 paper_bgcolor="rgba(255, 255, 255, 0.5)",
-                plot_bgcolor="rgba(255, 255, 255, 0.5)",
+                plot_bgcolor="rgba(255, 255, 255, 0.5)",  # Fixed typo here
                 legend=dict(title="Years", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            st.plotly_chart(spend_chart)
+            st.plotly_chart(spend_chart, use_container_width=True)
         else:
             st.warning(f"No spend data found in monthly columns for the selected year(s). Please ensure the columns contain non-zero values.")
     else:
@@ -481,7 +515,6 @@ with col3:
 # Bar chart 4: Driver Distribution by Rating (Row 2, Col 2)
 with col4:
     st.subheader("Driver Distribution by Rating")
-    # Filter to only the desired drivers
     driver_columns = ["Driver Safety", "Driver Operational", "Driver Regulatory"]
     driver_data = filtered_data[driver_columns].melt(var_name="Driver Type", value_name="Rating")
     
@@ -510,12 +543,11 @@ with col4:
         plot_bgcolor="rgba(255, 255, 255, 0.5)"
     )
     driver_chart.update_traces(textposition="auto")
-    st.plotly_chart(driver_chart)
+    st.plotly_chart(driver_chart, use_container_width=True)
 
-# Bar chart: Project Readiness Distribution (Row 3, Col 1) - Using Project Readiness Ranking
+# Bar chart: Project Readiness Distribution (Row 3, Col 1)
 with col5:
     st.subheader("Project Readiness Distribution")
-    # Check for valid readiness ranking data
     if "Project Readiness Ranking" not in filtered_data.columns or filtered_data["Project Readiness Ranking"].isna().all() or (filtered_data["Project Readiness Ranking"] == 0).all():
         st.warning("No valid Project Readiness Ranking data available.")
     else:
@@ -526,7 +558,7 @@ with col5:
                                  x="Project Readiness Ranking", 
                                  y="Count", 
                                  color="Project Readiness Ranking",
-                                 color_continuous_scale=px.colors.sequential.Viridis,  # Brighter colors for higher readiness
+                                 color_continuous_scale=px.colors.sequential.Viridis,
                                  text=readiness_counts["Count"].astype(str),
                                  title="")
         readiness_chart.update_layout(
@@ -540,7 +572,7 @@ with col5:
             plot_bgcolor="rgba(255, 255, 255, 0.5)"
         )
         readiness_chart.update_traces(textposition="auto")
-        st.plotly_chart(readiness_chart)
+        st.plotly_chart(readiness_chart, use_container_width=True)
 
 # Bar chart 6: Priority Ranking Distribution (Row 3, Col 2)
 with col6:
@@ -566,7 +598,7 @@ with col6:
         plot_bgcolor="rgba(255, 255, 255, 0.5)"
     )
     priority_chart.update_traces(textposition="auto")
-    st.plotly_chart(priority_chart)
+    st.plotly_chart(priority_chart, use_container_width=True)
 
 # --- Project Completion Assessment Section ---
 st.subheader("Project Completion Assessment (Powered by AI)")
@@ -713,7 +745,7 @@ assessment_chart.update_layout(
     plot_bgcolor="rgba(255, 255, 255, 0.5)"
 )
 assessment_chart.update_traces(textposition="auto")
-st.plotly_chart(assessment_chart)
+st.plotly_chart(assessment_chart, use_container_width=True)
 
 # --- Budget Certainty Assessment Tool Section ---
 if year_options:  # Show the section if there are years in the data
@@ -907,6 +939,7 @@ st.subheader("Project Locations Map")
 # Count projects per location
 location_counts = filtered_data["Location"].value_counts().reset_index()
 location_counts.columns = ["Location", "Project_Count"]
+total_projects = len(filtered_data)
 
 # Predefined coordinates for Canadian cities (approximate)
 canada_cities = {
@@ -924,7 +957,7 @@ canada_cities = {
 
 # Create a map centered on Canada
 map_center = [60.000000, -95.000000]  # Approximate center of Canada
-m = folium.Map(location=map_center, zoom_start=4)
+m = folium.Map(location=map_center, zoom_start=4, height=400, width=600)
 
 # Add markers for each location with project count
 for index, row in location_counts.iterrows():
@@ -944,6 +977,10 @@ for index, row in location_counts.iterrows():
 
 # Display the map in Streamlit
 folium_static(m)
+
+# --- Footer ---
+st.write("### Summary")
+st.write(f"Total Projects: {total_projects}")
 
 # --- Run Instructions ---
 # Save as app.py and run with: streamlit run app.py
