@@ -4,26 +4,14 @@ import plotly.express as px
 import numpy as np
 from datetime import datetime, timedelta
 import time
-import base64
 import io
 import folium
 from streamlit_folium import folium_static
 
-# Custom CSS with background image and layout adjustments
-def get_base64(bin_file):
-    with open(bin_file, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
-bg_image = "background.jpg"  # Ensure the image is saved as 'background.jpg'
-bg_base64 = get_base64(bg_image)
+# Custom CSS with layout adjustments (background removed)
 st.markdown(
     f"""
     <style>
-    .stApp {{
-        background: url(data:image/jpeg;base64,{bg_base64});
-        background-size: cover;
-    }}
     .main .block-container {{
         background: rgba(236, 240, 241, 0.9); /* Semi-transparent overlay for readability */
         color: #2c3e50;
@@ -43,11 +31,8 @@ st.markdown(
     h1 {{
         color: #2980b9; /* Professional blue for title */
         font-family: Arial, sans-serif;
-    }}
-    h2 {{
-        color: #34495e;
-        font-family: Arial, sans-serif;
-        margin-bottom: 20px; /* Standardized spacing between sections */
+        display: inline; /* Align title with logo */
+        margin-right: 10px; /* Space between title and logo */
     }}
     .chart-container {{
         margin-bottom: 20px; /* Consistent spacing below charts */
@@ -83,9 +68,13 @@ else:
     for col in available_monthly_columns:
         data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
 
-# Title and Description
-st.title("AIPEX by Enabled Performance")
-st.write("A professional tool for managing and visualizing oil and gas project data.")
+# Title and Logo
+col1, col2 = st.columns([3, 4])  # Adjust column widths as needed
+with col1:
+    st.image("logo.png", width=300)  # Display logo, adjust width as needed
+with col2:
+    st.title("AIPEX")
+st.write("A strategic tool for managing and visualizing oil and gas project data.")
 
 # Initialize session state for assessment parameters with default values
 if 'base_assessment' not in st.session_state:
@@ -121,11 +110,13 @@ if 'min_probability_cap' not in st.session_state:
 if 'assessment_score_weight' not in st.session_state:
     st.session_state.assessment_score_weight = 1.0  # Weight for assessment score impact
 
-# Initialize session state for popup visibility
+# Initialize session state for popup visibility and table state
 if 'show_assessment_popup' not in st.session_state:
     st.session_state.show_assessment_popup = False
 if 'show_probability_popup' not in st.session_state:
     st.session_state.show_probability_popup = False
+if 'show_table' not in st.session_state:
+    st.session_state.show_table = False  # Start with table collapsed
 
 # --- Filtering Section ---
 with st.sidebar.expander("Project Filters", expanded=True):
@@ -165,7 +156,7 @@ with st.sidebar.expander("Project Filters", expanded=True):
         selected_classifications = []
         selected_programs = []
         selected_predicted_repair_type = "Choose an option"
-        st.experimental_rerun()
+        st.rerun()
 
 # Apply filters
 filtered_data = data.copy()
@@ -178,9 +169,12 @@ if selected_programs:
 if selected_predicted_repair_type != "Choose an option" and "Predicted Repair Type" in filtered_data.columns:
     filtered_data = filtered_data[filtered_data["Predicted Repair Type"] == selected_predicted_repair_type]
 
-# Display filtered data
+# Display filtered data with collapse/expand button
 st.subheader("Filtered Project Data")
-st.dataframe(filtered_data)
+if st.button("Show/Hide Table"):
+    st.session_state.show_table = not st.session_state.show_table
+if st.session_state.show_table:
+    st.dataframe(filtered_data)
 
 # Key Metrics
 st.subheader("Key Metrics")
@@ -323,6 +317,8 @@ with col2:
             )
             cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
             cost_data = cost_data[cost_data["Total Cost"] > 0]
+            # Calculate total cost per FEATURE TYPE for conditional text positioning
+            total_cost_per_feature = cost_data.groupby("FEATURE TYPE")["Total Cost"].sum().reset_index()
             cost_chart = px.bar(
                 cost_data, 
                 x="FEATURE TYPE", 
@@ -331,7 +327,7 @@ with col2:
                 facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
                 title="",
                 barmode="group", 
-                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}')
+                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
             )
         else:
             cost_data = chart_data[["FEATURE TYPE", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
@@ -342,6 +338,8 @@ with col2:
             )
             cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type"])["Total Cost"].sum().reset_index()
             cost_data = cost_data[cost_data["Total Cost"] > 0]
+            # Calculate total cost per FEATURE TYPE for conditional text positioning
+            total_cost_per_feature = cost_data.groupby("FEATURE TYPE")["Total Cost"].sum().reset_index()
             cost_chart = px.bar(
                 cost_data, 
                 x="FEATURE TYPE", 
@@ -349,7 +347,7 @@ with col2:
                 color="Cost Type", 
                 title="",
                 barmode="group", 
-                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}')
+                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
             )
     else:
         if len(selected_years) > 1:
@@ -364,6 +362,8 @@ with col2:
                 )
                 cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
                 cost_data = cost_data[cost_data["Total Cost"] > 0]
+                # Calculate total cost per Program NAME for conditional text positioning
+                total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
                 cost_chart = px.bar(
                     cost_data, 
                     x="Program NAME", 
@@ -373,8 +373,7 @@ with col2:
                     facet_row="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
                     title="",
                     barmode="group",
-                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'),
-                    category_orders={"Planned Year": sorted(selected_years)}
+                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
                 )
             else:
                 cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year"]].melt(
@@ -385,6 +384,8 @@ with col2:
                 )
                 cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year"])["Total Cost"].sum().reset_index()
                 cost_data = cost_data[cost_data["Total Cost"] > 0]
+                # Calculate total cost per Program NAME for conditional text positioning
+                total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
                 cost_chart = px.bar(
                     cost_data, 
                     x="Program NAME", 
@@ -393,8 +394,7 @@ with col2:
                     facet_col="Planned Year", 
                     title="",
                     barmode="group",
-                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}'),
-                    category_orders={"Planned Year": sorted(selected_years)}
+                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
                 )
         else:
             for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
@@ -408,6 +408,8 @@ with col2:
                 )
                 cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
                 cost_data = cost_data[cost_data["Total Cost"] > 0]
+                # Calculate total cost per Program NAME for conditional text positioning
+                total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
                 cost_chart = px.bar(
                     cost_data, 
                     x="Program NAME", 
@@ -416,7 +418,7 @@ with col2:
                     facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
                     title="",
                     barmode="group", 
-                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}')
+                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
                 )
             else:
                 cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
@@ -427,6 +429,8 @@ with col2:
                 )
                 cost_data = cost_data.groupby(["Program NAME", "Cost Type"])["Total Cost"].sum().reset_index()
                 cost_data = cost_data[cost_data["Total Cost"] > 0]
+                # Calculate total cost per Program NAME for conditional text positioning
+                total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
                 cost_chart = px.bar(
                     cost_data, 
                     x="Program NAME", 
@@ -434,8 +438,27 @@ with col2:
                     color="Cost Type", 
                     title="",
                     barmode="group", 
-                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}')
+                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
                 )
+    # Merge with total cost data for conditional text positioning
+    if len(selected_programs) == 1:
+        cost_chart.data = [trace for trace in cost_chart.data if trace.x[0] in total_cost_per_feature["FEATURE TYPE"].values]
+        for trace in cost_chart.data:
+            feature = trace.x[0]
+            total_cost = total_cost_per_feature[total_cost_per_feature["FEATURE TYPE"] == feature]["Total Cost"].iloc[0]
+            if total_cost < 50000000:  # Threshold for short bars
+                trace.textposition = "outside"
+            else:
+                trace.textposition = "inside"
+    else:
+        cost_chart.data = [trace for trace in cost_chart.data if trace.x[0] in total_cost_per_program["Program NAME"].values]
+        for trace in cost_chart.data:
+            program = trace.x[0]
+            total_cost = total_cost_per_program[total_cost_per_program["Program NAME"] == program]["Total Cost"].iloc[0]
+            if total_cost < 50000000:  # Threshold for short bars
+                trace.textposition = "outside"
+            else:
+                trace.textposition = "inside"
     cost_chart.update_layout(
         yaxis_title="Total Cost ($)",
         yaxis_title_font_color="#2c3e50",
@@ -447,9 +470,13 @@ with col2:
         width=600,
         showlegend=True,
         paper_bgcolor="rgba(255, 255, 255, 0.5)",
-        plot_bgcolor="rgba(255, 255, 255, 0.5)"
+        plot_bgcolor="rgba(255, 255, 255, 0.5)",
+        bargap=0.2  # Add small gap between bars for better readability
     )
-    cost_chart.update_traces(textposition="auto")
+    cost_chart.update_traces(
+        textangle=-90,  # Rotate text to be vertical
+        textfont=dict(size=10)  # Adjust font size for readability
+    )
     st.plotly_chart(cost_chart, use_container_width=True)
 
 # Bar chart 3: Spend Profile (Row 2, Col 1)
@@ -503,7 +530,7 @@ with col3:
                 height=400,
                 width=600,
                 paper_bgcolor="rgba(255, 255, 255, 0.5)",
-                plot_bgcolor="rgba(255, 255, 255, 0.5)",  # Fixed typo here
+                plot_bgcolor="rgba(255, 255, 255, 0.5)",
                 legend=dict(title="Years", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             st.plotly_chart(spend_chart, use_container_width=True)
@@ -519,7 +546,7 @@ with col4:
     driver_data = filtered_data[driver_columns].melt(var_name="Driver Type", value_name="Rating")
     
     # Rename "Driver Operational" to "Reliability"
-    driver_data["Driver Type"] = driver_data["Driver Type"].replace("Driver Operational", "Reliability")
+    driver_data["Driver Type"] = driver_data["Driver Type"].replace("Driver Operational", "Driver Reliability")
     
     driver_data = driver_data.groupby(["Driver Type", "Rating"]).size().reset_index(name="Count")
     driver_data = driver_data[driver_data["Rating"].notna()]
