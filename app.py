@@ -206,23 +206,64 @@ with col_add_metrics2:
 # --- Charts Section ---
 st.subheader("Visualizations")
 
-# Create 3x2 grid using columns with adjusted widths
-# Row 1
-col1, col2 = st.columns([1, 1])
-# Row 2
-col3, col4 = st.columns([1, 1])
-# Row 3
-col5, col6 = st.columns([1, 1])
-
-# Bar chart 1: Program Count by Scope (Row 1, Col 1)
-with col1:
-    st.subheader("Program Count by Scope")
-    if len(selected_programs) == 1:
-        chart_data = filtered_data[filtered_data["Program NAME"] == selected_programs[0]]
+# Chart 1: Program Count by Scope
+st.subheader("Program Count by Scope")
+if len(selected_programs) == 1:
+    chart_data = filtered_data[filtered_data["Program NAME"] == selected_programs[0]]
+    if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
+        priority_chart = px.histogram(
+            chart_data, 
+            x="FEATURE TYPE", 
+            color="Fully Scoped", 
+            facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+            title="",
+            barmode="group"
+        )
+    else:
+        priority_chart = px.histogram(
+            chart_data, 
+            x="FEATURE TYPE", 
+            color="Fully Scoped", 
+            title="",
+            barmode="group"
+        )
+    # Display unique Predicted Repair Types under the chart if a single program is selected
+    if len(selected_programs) == 1 and selected_predicted_repair_type != "Choose an option" and "Predicted Repair Type" in chart_data.columns:
+        unique_repair_types = chart_data["Predicted Repair Type"].dropna().unique().tolist()
+        st.write("**Predicted Repair Types in this Program:**", ", ".join(unique_repair_types))
+else:
+    if len(selected_years) > 1:
+        chart_data = filtered_data.groupby(['Program NAME', 'Fully Scoped', 'Planned Year', 'Predicted Repair Type']).size().reset_index(name='Count')
+        if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
+            priority_chart = px.bar(
+                chart_data, 
+                x="Program NAME", 
+                y="Count", 
+                color="Fully Scoped", 
+                facet_col="Planned Year", 
+                facet_row="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+                title="",
+                barmode="group",
+                category_orders={"Planned Year": sorted(selected_years)}
+            )
+        else:
+            priority_chart = px.bar(
+                chart_data, 
+                x="Program NAME", 
+                y="Count", 
+                color="Fully Scoped", 
+                facet_col="Planned Year", 
+                title="",
+                barmode="group",
+                category_orders={"Planned Year": sorted(selected_years)}
+            )
+    else:
+        chart_data = filtered_data.groupby(['Program NAME', 'Fully Scoped', 'Predicted Repair Type']).size().reset_index(name='Count')
         if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
             priority_chart = px.histogram(
                 chart_data, 
-                x="FEATURE TYPE", 
+                x="Program NAME", 
+                y="Count",
                 color="Fully Scoped", 
                 facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
                 title="",
@@ -231,97 +272,137 @@ with col1:
         else:
             priority_chart = px.histogram(
                 chart_data, 
-                x="FEATURE TYPE", 
+                x="Program NAME", 
+                y="Count",
                 color="Fully Scoped", 
                 title="",
                 barmode="group"
             )
-        # Display unique Predicted Repair Types under the chart if a single program is selected
-        if len(selected_programs) == 1 and selected_predicted_repair_type != "Choose an option" and "Predicted Repair Type" in chart_data.columns:
-            unique_repair_types = chart_data["Predicted Repair Type"].dropna().unique().tolist()
-            st.write("**Predicted Repair Types in this Program:**", ", ".join(unique_repair_types))
-    else:
-        if len(selected_years) > 1:
-            chart_data = filtered_data.groupby(['Program NAME', 'Fully Scoped', 'Planned Year', 'Predicted Repair Type']).size().reset_index(name='Count')
-            if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
-                priority_chart = px.bar(
-                    chart_data, 
-                    x="Program NAME", 
-                    y="Count", 
-                    color="Fully Scoped", 
-                    facet_col="Planned Year", 
-                    facet_row="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
-                    title="",
-                    barmode="group",
-                    category_orders={"Planned Year": sorted(selected_years)}
-                )
-            else:
-                priority_chart = px.bar(
-                    chart_data, 
-                    x="Program NAME", 
-                    y="Count", 
-                    color="Fully Scoped", 
-                    facet_col="Planned Year", 
-                    title="",
-                    barmode="group",
-                    category_orders={"Planned Year": sorted(selected_years)}
-                )
-        else:
-            chart_data = filtered_data.groupby(['Program NAME', 'Fully Scoped', 'Predicted Repair Type']).size().reset_index(name='Count')
-            if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
-                priority_chart = px.histogram(
-                    chart_data, 
-                    x="Program NAME", 
-                    y="Count",
-                    color="Fully Scoped", 
-                    facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
-                    title="",
-                    barmode="group"
-                )
-            else:
-                priority_chart = px.histogram(
-                    chart_data, 
-                    x="Program NAME", 
-                    y="Count",
-                    color="Fully Scoped", 
-                    title="",
-                    barmode="group"
-                )
-    priority_chart.update_layout(
-        yaxis_title="Count", 
-        yaxis_title_font_color="#2c3e50",
-        xaxis_title="Program Name" if len(selected_programs) != 1 else "Feature Type",
-        xaxis_title_font_color="#2c3e50",
-        height=400,
-        width=600,
-        paper_bgcolor="rgba(255, 255, 255, 0.5)",
-        plot_bgcolor="rgba(255, 255, 255, 0.5)",
-        legend_title="Fully Scoped"
-    )
-    priority_chart.update_traces(textposition="auto")
-    st.plotly_chart(priority_chart, use_container_width=True)
+priority_chart.update_layout(
+    yaxis_title="Count", 
+    yaxis_title_font_color="#2c3e50",
+    xaxis_title="Program Name" if len(selected_programs) != 1 else "Feature Type",
+    xaxis_title_font_color="#2c3e50",
+    height=400,
+    width=600,
+    paper_bgcolor="rgba(255, 255, 255, 0.5)",
+    plot_bgcolor="rgba(255, 255, 255, 0.5)",
+    legend_title="Fully Scoped"
+)
+priority_chart.update_traces(textposition="auto")
+st.plotly_chart(priority_chart, use_container_width=True)
 
-# Bar chart 2: Total Cost by Program (Row 1, Col 2)
-with col2:
-    st.subheader("Total Cost by Program")
-    if len(selected_programs) == 1:
-        chart_data = filtered_data[filtered_data["Program NAME"] == selected_programs[0]]
+# Chart 2: Total Cost by Program
+st.subheader("Total Cost by Program")
+if len(selected_programs) == 1:
+    chart_data = filtered_data[filtered_data["Program NAME"] == selected_programs[0]]
+    for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
+        chart_data[col] = pd.to_numeric(chart_data[col], errors='coerce').fillna(0)
+    if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
+        cost_data = chart_data[["FEATURE TYPE", "StandardCost", "ProjectedCost", "Actual Cost", "Predicted Repair Type"]].melt(
+            id_vars=["FEATURE TYPE", "Predicted Repair Type"], 
+            value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+            var_name="Cost Type", 
+            value_name="Total Cost"
+        )
+        cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
+        cost_data = cost_data[cost_data["Total Cost"] > 0]
+        # Calculate total cost per FEATURE TYPE for conditional text positioning
+        total_cost_per_feature = cost_data.groupby("FEATURE TYPE")["Total Cost"].sum().reset_index()
+        cost_chart = px.bar(
+            cost_data, 
+            x="FEATURE TYPE", 
+            y="Total Cost", 
+            color="Cost Type", 
+            facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+            title="",
+            barmode="group", 
+            text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
+        )
+    else:
+        cost_data = chart_data[["FEATURE TYPE", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
+            id_vars=["FEATURE TYPE"], 
+            value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+            var_name="Cost Type", 
+            value_name="Total Cost"
+        )
+        cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type"])["Total Cost"].sum().reset_index()
+        cost_data = cost_data[cost_data["Total Cost"] > 0]
+        # Calculate total cost per FEATURE TYPE for conditional text positioning
+        total_cost_per_feature = cost_data.groupby("FEATURE TYPE")["Total Cost"].sum().reset_index()
+        cost_chart = px.bar(
+            cost_data, 
+            x="FEATURE TYPE", 
+            y="Total Cost", 
+            color="Cost Type", 
+            title="",
+            barmode="group", 
+            text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
+        )
+else:
+    if len(selected_years) > 1:
         for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
-            chart_data[col] = pd.to_numeric(chart_data[col], errors='coerce').fillna(0)
-        if "Predicted Repair Type" in chart_data.columns and not chart_data["Predicted Repair Type"].isna().all():
-            cost_data = chart_data[["FEATURE TYPE", "StandardCost", "ProjectedCost", "Actual Cost", "Predicted Repair Type"]].melt(
-                id_vars=["FEATURE TYPE", "Predicted Repair Type"], 
+            filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
+        if "Predicted Repair Type" in filtered_data.columns and not filtered_data["Predicted Repair Type"].isna().all():
+            cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year", "Predicted Repair Type"]].melt(
+                id_vars=["Program NAME", "Planned Year", "Predicted Repair Type"], 
                 value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
                 var_name="Cost Type", 
                 value_name="Total Cost"
             )
-            cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
+            cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
             cost_data = cost_data[cost_data["Total Cost"] > 0]
-            # Calculate total cost per FEATURE TYPE for conditional text positioning
-            total_cost_per_feature = cost_data.groupby("FEATURE TYPE")["Total Cost"].sum().reset_index()
+            # Calculate total cost per Program NAME for conditional text positioning
+            total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
             cost_chart = px.bar(
                 cost_data, 
-                x="FEATURE TYPE", 
+                x="Program NAME", 
+                y="Total Cost", 
+                color="Cost Type", 
+                facet_col="Planned Year", 
+                facet_row="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
+                title="",
+                barmode="group",
+                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
+            )
+        else:
+            cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year"]].melt(
+                id_vars=["Program NAME", "Planned Year"], 
+                value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+                var_name="Cost Type", 
+                value_name="Total Cost"
+            )
+            cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year"])["Total Cost"].sum().reset_index()
+            cost_data = cost_data[cost_data["Total Cost"] > 0]
+            # Calculate total cost per Program NAME for conditional text positioning
+            total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
+            cost_chart = px.bar(
+                cost_data, 
+                x="Program NAME", 
+                y="Total Cost", 
+                color="Cost Type", 
+                facet_col="Planned Year", 
+                title="",
+                barmode="group",
+                text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
+            )
+    else:
+        for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
+            filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
+        if "Predicted Repair Type" in filtered_data.columns and not filtered_data["Predicted Repair Type"].isna().all():
+            cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Predicted Repair Type"]].melt(
+                id_vars=["Program NAME", "Predicted Repair Type"], 
+                value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
+                var_name="Cost Type", 
+                value_name="Total Cost"
+            )
+            cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
+            cost_data = cost_data[cost_data["Total Cost"] > 0]
+            # Calculate total cost per Program NAME for conditional text positioning
+            total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
+            cost_chart = px.bar(
+                cost_data, 
+                x="Program NAME", 
                 y="Total Cost", 
                 color="Cost Type", 
                 facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
@@ -330,302 +411,207 @@ with col2:
                 text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
             )
         else:
-            cost_data = chart_data[["FEATURE TYPE", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
-                id_vars=["FEATURE TYPE"], 
+            cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
+                id_vars=["Program NAME"], 
                 value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
                 var_name="Cost Type", 
                 value_name="Total Cost"
             )
-            cost_data = cost_data.groupby(["FEATURE TYPE", "Cost Type"])["Total Cost"].sum().reset_index()
+            cost_data = cost_data.groupby(["Program NAME", "Cost Type"])["Total Cost"].sum().reset_index()
             cost_data = cost_data[cost_data["Total Cost"] > 0]
-            # Calculate total cost per FEATURE TYPE for conditional text positioning
-            total_cost_per_feature = cost_data.groupby("FEATURE TYPE")["Total Cost"].sum().reset_index()
+            # Calculate total cost per Program NAME for conditional text positioning
+            total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
             cost_chart = px.bar(
                 cost_data, 
-                x="FEATURE TYPE", 
+                x="Program NAME", 
                 y="Total Cost", 
                 color="Cost Type", 
                 title="",
                 barmode="group", 
                 text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
             )
-    else:
-        if len(selected_years) > 1:
-            for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
-                filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
-            if "Predicted Repair Type" in filtered_data.columns and not filtered_data["Predicted Repair Type"].isna().all():
-                cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year", "Predicted Repair Type"]].melt(
-                    id_vars=["Program NAME", "Planned Year", "Predicted Repair Type"], 
-                    value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
-                    var_name="Cost Type", 
-                    value_name="Total Cost"
-                )
-                cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
-                cost_data = cost_data[cost_data["Total Cost"] > 0]
-                # Calculate total cost per Program NAME for conditional text positioning
-                total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
-                cost_chart = px.bar(
-                    cost_data, 
-                    x="Program NAME", 
-                    y="Total Cost", 
-                    color="Cost Type", 
-                    facet_col="Planned Year", 
-                    facet_row="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
-                    title="",
-                    barmode="group",
-                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
-                )
-            else:
-                cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Planned Year"]].melt(
-                    id_vars=["Program NAME", "Planned Year"], 
-                    value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
-                    var_name="Cost Type", 
-                    value_name="Total Cost"
-                )
-                cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Planned Year"])["Total Cost"].sum().reset_index()
-                cost_data = cost_data[cost_data["Total Cost"] > 0]
-                # Calculate total cost per Program NAME for conditional text positioning
-                total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
-                cost_chart = px.bar(
-                    cost_data, 
-                    x="Program NAME", 
-                    y="Total Cost", 
-                    color="Cost Type", 
-                    facet_col="Planned Year", 
-                    title="",
-                    barmode="group",
-                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
-                )
+# Merge with total cost data for conditional text positioning
+if len(selected_programs) == 1:
+    cost_chart.data = [trace for trace in cost_chart.data if trace.x[0] in total_cost_per_feature["FEATURE TYPE"].values]
+    for trace in cost_chart.data:
+        feature = trace.x[0]
+        total_cost = total_cost_per_feature[total_cost_per_feature["FEATURE TYPE"] == feature]["Total Cost"].iloc[0]
+        if total_cost < 50000000:  # Threshold for short bars
+            trace.textposition = "outside"
         else:
-            for col in ["StandardCost", "ProjectedCost", "Actual Cost"]:
-                filtered_data[col] = pd.to_numeric(filtered_data[col], errors='coerce').fillna(0)
-            if "Predicted Repair Type" in filtered_data.columns and not filtered_data["Predicted Repair Type"].isna().all():
-                cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost", "Predicted Repair Type"]].melt(
-                    id_vars=["Program NAME", "Predicted Repair Type"], 
-                    value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
-                    var_name="Cost Type", 
-                    value_name="Total Cost"
-                )
-                cost_data = cost_data.groupby(["Program NAME", "Cost Type", "Predicted Repair Type"])["Total Cost"].sum().reset_index()
-                cost_data = cost_data[cost_data["Total Cost"] > 0]
-                # Calculate total cost per Program NAME for conditional text positioning
-                total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
-                cost_chart = px.bar(
-                    cost_data, 
-                    x="Program NAME", 
-                    y="Total Cost", 
-                    color="Cost Type", 
-                    facet_col="Predicted Repair Type" if selected_predicted_repair_type != "Choose an option" else None,
-                    title="",
-                    barmode="group", 
-                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
-                )
-            else:
-                cost_data = filtered_data[["Program NAME", "StandardCost", "ProjectedCost", "Actual Cost"]].melt(
-                    id_vars=["Program NAME"], 
-                    value_vars=["StandardCost", "ProjectedCost", "Actual Cost"], 
-                    var_name="Cost Type", 
-                    value_name="Total Cost"
-                )
-                cost_data = cost_data.groupby(["Program NAME", "Cost Type"])["Total Cost"].sum().reset_index()
-                cost_data = cost_data[cost_data["Total Cost"] > 0]
-                # Calculate total cost per Program NAME for conditional text positioning
-                total_cost_per_program = cost_data.groupby("Program NAME")["Total Cost"].sum().reset_index()
-                cost_chart = px.bar(
-                    cost_data, 
-                    x="Program NAME", 
-                    y="Total Cost", 
-                    color="Cost Type", 
-                    title="",
-                    barmode="group", 
-                    text=cost_data["Total Cost"].apply(lambda x: f'${x:,.0f}' if x > 0 else "")
-                )
-    # Merge with total cost data for conditional text positioning
-    if len(selected_programs) == 1:
-        cost_chart.data = [trace for trace in cost_chart.data if trace.x[0] in total_cost_per_feature["FEATURE TYPE"].values]
-        for trace in cost_chart.data:
-            feature = trace.x[0]
-            total_cost = total_cost_per_feature[total_cost_per_feature["FEATURE TYPE"] == feature]["Total Cost"].iloc[0]
-            if total_cost < 50000000:  # Threshold for short bars
-                trace.textposition = "outside"
-            else:
-                trace.textposition = "inside"
-    else:
-        cost_chart.data = [trace for trace in cost_chart.data if trace.x[0] in total_cost_per_program["Program NAME"].values]
-        for trace in cost_chart.data:
-            program = trace.x[0]
-            total_cost = total_cost_per_program[total_cost_per_program["Program NAME"] == program]["Total Cost"].iloc[0]
-            if total_cost < 50000000:  # Threshold for short bars
-                trace.textposition = "outside"
-            else:
-                trace.textposition = "inside"
-    cost_chart.update_layout(
-        yaxis_title="Total Cost ($)",
-        yaxis_title_font_color="#2c3e50",
-        xaxis_title="Feature Type" if len(selected_programs) == 1 else "Program Name",
-        xaxis_title_font_color="#2c3e50",
-        yaxis_tickformat="$,.0f",
-        yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
-        height=400,
-        width=600,
-        showlegend=True,
-        paper_bgcolor="rgba(255, 255, 255, 0.5)",
-        plot_bgcolor="rgba(255, 255, 255, 0.5)",
-        bargap=0.2  # Add small gap between bars for better readability
-    )
-    cost_chart.update_traces(
-        textangle=-90,  # Rotate text to be vertical
-        textfont=dict(size=10)  # Adjust font size for readability
-    )
-    st.plotly_chart(cost_chart, use_container_width=True)
-
-# Bar chart 3: Spend Profile (Row 2, Col 1)
-with col3:
-    st.subheader("Spend Profile")
-    if selected_years:
-        if len(selected_years) > 1:
-            selected_year = st.sidebar.selectbox("Select Single Planned Year for Detailed View (optional)", options=selected_years + [None], index=len(selected_years))
+            trace.textposition = "inside"
+else:
+    cost_chart.data = [trace for trace in cost_chart.data if trace.x[0] in total_cost_per_program["Program NAME"].values]
+    for trace in cost_chart.data:
+        program = trace.x[0]
+        total_cost = total_cost_per_program[total_cost_per_program["Program NAME"] == program]["Total Cost"].iloc[0]
+        if total_cost < 50000000:  # Threshold for short bars
+            trace.textposition = "outside"
         else:
-            selected_year = selected_years[0]
+            trace.textposition = "inside"
+cost_chart.update_layout(
+    yaxis_title="Total Cost ($)",
+    yaxis_title_font_color="#2c3e50",
+    xaxis_title="Feature Type" if len(selected_programs) == 1 else "Program Name",
+    xaxis_title_font_color="#2c3e50",
+    yaxis_tickformat="$,.0f",
+    yaxis_range=[0, cost_data["Total Cost"].max() * 1.2],
+    height=400,
+    width=600,
+    showlegend=True,
+    paper_bgcolor="rgba(255, 255, 255, 0.5)",
+    plot_bgcolor="rgba(255, 255, 255, 0.5)",
+    bargap=0.2  # Add small gap between bars for better readability
+)
+cost_chart.update_traces(
+    textangle=-90,  # Rotate text to be vertical
+    textfont=dict(size=10)  # Adjust font size for readability
+)
+st.plotly_chart(cost_chart, use_container_width=True)
+
+# Chart 3: Spend Profile
+st.subheader("Spend Profile")
+if selected_years:
+    if len(selected_years) > 1:
+        selected_year = st.sidebar.selectbox("Select Single Planned Year for Detailed View (optional)", options=selected_years + [None], index=len(selected_years))
     else:
-        selected_year = year_options[0] if year_options else None
+        selected_year = selected_years[0]
+else:
+    selected_year = year_options[0] if year_options else None
 
-    if selected_year:
-        spend_data = filtered_data[filtered_data["Planned Year"] == selected_year].copy()
-    else:
-        spend_data = filtered_data.copy()
+if selected_year:
+    spend_data = filtered_data[filtered_data["Planned Year"] == selected_year].copy()
+else:
+    spend_data = filtered_data.copy()
 
-    monthly_columns = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-    months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+monthly_columns = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-    spend_profile_data = []
-    if not spend_data.empty and any(col in spend_data.columns for col in monthly_columns):
-        for year in selected_years if selected_years else [selected_year] if selected_year else []:
-            year_data = filtered_data[filtered_data["Planned Year"] == year].copy()
-            year_spend = {}
-            for month in monthly_columns:
-                if month in year_data.columns:
-                    year_spend[month] = year_data[month].sum()
-            for month, short_month in zip(monthly_columns, months):
-                spend_profile_data.append({'Year': year, 'Month': short_month, 'Spend Amount': year_spend.get(month, 0)})
+spend_profile_data = []
+if not spend_data.empty and any(col in spend_data.columns for col in monthly_columns):
+    for year in selected_years if selected_years else [selected_year] if selected_year else []:
+        year_data = filtered_data[filtered_data["Planned Year"] == year].copy()
+        year_spend = {}
+        for month in monthly_columns:
+            if month in year_data.columns:
+                year_spend[month] = year_data[month].sum()
+        for month, short_month in zip(monthly_columns, months):
+            spend_profile_data.append({'Year': year, 'Month': short_month, 'Spend Amount': year_spend.get(month, 0)})
     
-        spend_profile_df = pd.DataFrame(spend_profile_data)
+    spend_profile_df = pd.DataFrame(spend_profile_data)
 
-        if spend_profile_df['Spend Amount'].sum() > 0:
-            spend_chart = px.line(spend_profile_df,
-                                x="Month",
-                                y="Spend Amount",
-                                color="Year",
-                                title="",
-                                labels={"Spend Amount": "Spend Amount ($)", "Year": "Planned Year"})
-            spend_chart.update_traces(mode="lines+markers")
-            spend_chart.update_layout(
-                yaxis_title="Spend Amount ($)",
-                yaxis_title_font_color="#2c3e50",
-                xaxis_title="Month",
-                xaxis_title_font_color="#2c3e50",
-                xaxis={'tickmode': 'array', 'tickvals': months},
-                yaxis_tickformat="$,.0f",
-                yaxis_range=[0, spend_profile_df["Spend Amount"].max() * 1.1 if spend_profile_df["Spend Amount"].max() > 0 else 1000],
-                height=400,
-                width=600,
-                paper_bgcolor="rgba(255, 255, 255, 0.5)",
-                plot_bgcolor="rgba(255, 255, 255, 0.5)",
-                legend=dict(title="Years", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            st.plotly_chart(spend_chart, use_container_width=True)
-        else:
-            st.warning(f"No spend data found in monthly columns for the selected year(s). Please ensure the columns contain non-zero values.")
-    else:
-        st.warning(f"No valid monthly spend data available for the selected year(s). Please check if all monthly columns exist and contain data.")
-
-# Bar chart 4: Driver Distribution by Rating (Row 2, Col 2)
-with col4:
-    st.subheader("Driver Distribution by Rating")
-    driver_columns = ["Driver Safety", "Driver Operational", "Driver Regulatory"]
-    driver_data = filtered_data[driver_columns].melt(var_name="Driver Type", value_name="Rating")
-    
-    # Rename "Driver Operational" to "Reliability"
-    driver_data["Driver Type"] = driver_data["Driver Type"].replace("Driver Operational", "Driver Reliability")
-    
-    driver_data = driver_data.groupby(["Driver Type", "Rating"]).size().reset_index(name="Count")
-    driver_data = driver_data[driver_data["Rating"].notna()]
-    
-    driver_chart = px.bar(driver_data, 
-                          x="Driver Type", 
-                          y="Count", 
-                          color="Rating", 
-                          title="",
-                          text=driver_data["Count"].astype(str),
-                          barmode="stack")
-    driver_chart.update_layout(
-        yaxis_title="Number of Projects",
-        yaxis_title_font_color="#2c3e50",
-        xaxis_title="Driver Type",
-        xaxis_title_font_color="#2c3e50",
-        height=400,
-        width=600,
-        showlegend=True,
-        paper_bgcolor="rgba(255, 255, 255, 0.5)",
-        plot_bgcolor="rgba(255, 255, 255, 0.5)"
-    )
-    driver_chart.update_traces(textposition="auto")
-    st.plotly_chart(driver_chart, use_container_width=True)
-
-# Bar chart: Project Readiness Distribution (Row 3, Col 1)
-with col5:
-    st.subheader("Project Readiness Distribution")
-    if "Project Readiness Ranking" not in filtered_data.columns or filtered_data["Project Readiness Ranking"].isna().all() or (filtered_data["Project Readiness Ranking"] == 0).all():
-        st.warning("No valid Project Readiness Ranking data available.")
-    else:
-        readiness_counts = filtered_data["Project Readiness Ranking"].value_counts().reset_index()
-        readiness_counts.columns = ["Project Readiness Ranking", "Count"]
-        
-        readiness_chart = px.bar(readiness_counts, 
-                                 x="Project Readiness Ranking", 
-                                 y="Count", 
-                                 color="Project Readiness Ranking",
-                                 color_continuous_scale=px.colors.sequential.Viridis,
-                                 text=readiness_counts["Count"].astype(str),
-                                 title="")
-        readiness_chart.update_layout(
-            yaxis_title="Number of Projects",
+    if spend_profile_df['Spend Amount'].sum() > 0:
+        spend_chart = px.line(spend_profile_df,
+                            x="Month",
+                            y="Spend Amount",
+                            color="Year",
+                            title="",
+                            labels={"Spend Amount": "Spend Amount ($)", "Year": "Planned Year"})
+        spend_chart.update_traces(mode="lines+markers")
+        spend_chart.update_layout(
+            yaxis_title="Spend Amount ($)",
             yaxis_title_font_color="#2c3e50",
-            xaxis_title="Project Readiness Ranking",
+            xaxis_title="Month",
             xaxis_title_font_color="#2c3e50",
+            xaxis={'tickmode': 'array', 'tickvals': months},
+            yaxis_tickformat="$,.0f",
+            yaxis_range=[0, spend_profile_df["Spend Amount"].max() * 1.1 if spend_profile_df["Spend Amount"].max() > 0 else 1000],
             height=400,
             width=600,
             paper_bgcolor="rgba(255, 255, 255, 0.5)",
-            plot_bgcolor="rgba(255, 255, 255, 0.5)"
+            plot_bgcolor="rgba(255, 255, 255, 0.5)",
+            legend=dict(title="Years", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        readiness_chart.update_traces(textposition="auto")
-        st.plotly_chart(readiness_chart, use_container_width=True)
+        st.plotly_chart(spend_chart, use_container_width=True)
+    else:
+        st.warning(f"No spend data found in monthly columns for the selected year(s). Please ensure the columns contain non-zero values.")
+else:
+    st.warning(f"No valid monthly spend data available for the selected year(s). Please check if all monthly columns exist and contain data.")
 
-# Bar chart 6: Priority Ranking Distribution (Row 3, Col 2)
-with col6:
-    st.subheader("Priority Ranking Distribution")
-    priority_data = filtered_data["Priority Ranking "].value_counts().reset_index()
-    priority_data.columns = ["Priority Ranking", "Count"]
-    priority_chart = px.bar(priority_data, 
-                            x="Priority Ranking", 
-                            y="Count", 
-                            title="",
-                            text=priority_data["Count"].astype(str),
-                            color="Priority Ranking",
-                            color_continuous_scale=px.colors.sequential.Viridis)
-    priority_chart.update_layout(
+# Chart 4: Driver Distribution by Rating
+st.subheader("Driver Distribution by Rating")
+driver_columns = ["Driver Safety", "Driver Operational", "Driver Regulatory"]
+driver_data = filtered_data[driver_columns].melt(var_name="Driver Type", value_name="Rating")
+
+# Rename "Driver Operational" to "Reliability"
+driver_data["Driver Type"] = driver_data["Driver Type"].replace("Driver Operational", "Driver Reliability")
+
+driver_data = driver_data.groupby(["Driver Type", "Rating"]).size().reset_index(name="Count")
+driver_data = driver_data[driver_data["Rating"].notna()]
+
+driver_chart = px.bar(driver_data, 
+                      x="Driver Type", 
+                      y="Count", 
+                      color="Rating", 
+                      title="",
+                      text=driver_data["Count"].astype(str),
+                      barmode="stack")
+driver_chart.update_layout(
+    yaxis_title="Number of Projects",
+    yaxis_title_font_color="#2c3e50",
+    xaxis_title="Driver Type",
+    xaxis_title_font_color="#2c3e50",
+    height=400,
+    width=600,
+    showlegend=True,
+    paper_bgcolor="rgba(255, 255, 255, 0.5)",
+    plot_bgcolor="rgba(255, 255, 255, 0.5)"
+)
+driver_chart.update_traces(textposition="auto")
+st.plotly_chart(driver_chart, use_container_width=True)
+
+# Chart 5: Project Readiness Distribution
+st.subheader("Project Readiness Distribution")
+if "Project Readiness Ranking" not in filtered_data.columns or filtered_data["Project Readiness Ranking"].isna().all() or (filtered_data["Project Readiness Ranking"] == 0).all():
+    st.warning("No valid Project Readiness Ranking data available.")
+else:
+    readiness_counts = filtered_data["Project Readiness Ranking"].value_counts().reset_index()
+    readiness_counts.columns = ["Project Readiness Ranking", "Count"]
+    
+    readiness_chart = px.bar(readiness_counts, 
+                             x="Project Readiness Ranking", 
+                             y="Count", 
+                             color="Project Readiness Ranking",
+                             color_continuous_scale=px.colors.sequential.Viridis,
+                             text=readiness_counts["Count"].astype(str),
+                             title="")
+    readiness_chart.update_layout(
         yaxis_title="Number of Projects",
         yaxis_title_font_color="#2c3e50",
-        xaxis_title="Priority Ranking",
+        xaxis_title="Project Readiness Ranking",
         xaxis_title_font_color="#2c3e50",
         height=400,
         width=600,
-        showlegend=False,
         paper_bgcolor="rgba(255, 255, 255, 0.5)",
         plot_bgcolor="rgba(255, 255, 255, 0.5)"
     )
-    priority_chart.update_traces(textposition="auto")
-    st.plotly_chart(priority_chart, use_container_width=True)
+    readiness_chart.update_traces(textposition="auto")
+    st.plotly_chart(readiness_chart, use_container_width=True)
+
+# Chart 6: Priority Ranking Distribution
+st.subheader("Priority Ranking Distribution")
+priority_data = filtered_data["Priority Ranking "].value_counts().reset_index()
+priority_data.columns = ["Priority Ranking", "Count"]
+priority_chart = px.bar(priority_data, 
+                        x="Priority Ranking", 
+                        y="Count", 
+                        title="",
+                        text=priority_data["Count"].astype(str),
+                        color="Priority Ranking",
+                        color_continuous_scale=px.colors.sequential.Viridis)
+priority_chart.update_layout(
+    yaxis_title="Number of Projects",
+    yaxis_title_font_color="#2c3e50",
+    xaxis_title="Priority Ranking",
+    xaxis_title_font_color="#2c3e50",
+    height=400,
+    width=600,
+    showlegend=False,
+    paper_bgcolor="rgba(255, 255, 255, 0.5)",
+    plot_bgcolor="rgba(255, 255, 255, 0.5)"
+)
+priority_chart.update_traces(textposition="auto")
+st.plotly_chart(priority_chart, use_container_width=True)
 
 # --- Project Completion Assessment Section ---
 st.subheader("Project Completion Assessment (Powered by AI)")
