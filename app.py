@@ -539,13 +539,17 @@ driver_data["Driver Type"] = driver_data["Driver Type"].replace("Driver Operatio
 driver_data = driver_data.groupby(["Driver Type", "Rating"]).size().reset_index(name="Count")
 driver_data = driver_data[driver_data["Rating"].notna()]
 
+# Define custom color scale for ratings
+color_map = {"high": "red", "medium": "blue", "low": "lightblue"}
+
 driver_chart = px.bar(driver_data, 
                       x="Driver Type", 
                       y="Count", 
                       color="Rating", 
                       title="",
                       text=driver_data["Count"].astype(str),
-                      barmode="stack")
+                      barmode="stack",
+                      color_discrete_map=color_map)  # Apply custom color mapping
 driver_chart.update_layout(
     yaxis_title="Number of Projects",
     yaxis_title_font_color="#2c3e50",
